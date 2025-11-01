@@ -7,7 +7,6 @@ use roboat::ide::ide_types::NewAnimation;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use tokio::time;
 
 pub struct AnimationUploader {
     pub roblosecurity: String,
@@ -259,12 +258,8 @@ impl AnimationUploader {
 }
 
 mod internal {
-    use anyhow::Context;
-    use std::{
-        collections::{HashMap, HashSet},
-        time::Duration,
-    };
-    use tokio::{io::DuplexStream, time};
+    use std::{collections::HashMap, time::Duration};
+    use tokio::time;
 
     use roboat::{
         RoboatError,
@@ -330,7 +325,6 @@ mod internal {
             let mut sucess_responses: Vec<AssetBatchResponse> = Vec::new();
             const MAX_RETRIES: u32 = 9;
             let mut attempts = 0;
-            let mut timeout_seconds: u64 = 4;
 
             loop {
                 let initial_payload = self.create_batch_payloads(asset_ids);
@@ -414,7 +408,6 @@ mod internal {
 
                         if self.should_retry(&e, attempts, MAX_RETRIES) {
                             // attempts += 1;
-                            timeout_seconds += 1;
                             println!(
                                 "Request failed, retrying with higher timeout: attempts {}/{} ({})",
                                 attempts, MAX_RETRIES, e
