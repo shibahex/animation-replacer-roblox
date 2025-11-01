@@ -2,6 +2,7 @@ use animation_replace_roblox::StudioParser;
 use animation_replace_roblox::animation::uploader::AnimationUploader;
 use clap::Parser;
 use roboat::assetdelivery::AssetBatchResponse;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 #[derive(Parser, Debug)]
@@ -31,6 +32,7 @@ struct Args {
 async fn main() {
     let args = Args::parse();
     let file_path = shellexpand::tilde(&args.file).to_string();
+    let mut seen_ids: HashSet<String> = HashSet::new();
 
     // Build the parser with the roboat client
     let builder = StudioParser::builder()
@@ -48,9 +50,17 @@ async fn main() {
     let mut all_animations: Vec<AssetBatchResponse> = Vec::new();
     let workspace_animations = parser.workspace_animations();
     match workspace_animations.await {
-        Ok(mut animations) => {
-            // println!("Animations: {:?}", animations);
-            all_animations.append(&mut animations);
+        Ok(animations) => {
+            for animation in animations {
+                if let Some(asset_id) = animation.request_id.clone() {
+                    if seen_ids.contains(&asset_id) {
+                        // Skip this animation (it's a duplicate)
+                        continue;
+                    }
+                    seen_ids.insert(asset_id);
+                    all_animations.push(animation);
+                }
+            }
         }
         Err(e) => {
             eprintln!("Failed to workspace animations: {:?}", e);
@@ -60,15 +70,28 @@ async fn main() {
     let script_animations = parser.all_animations_in_scripts();
 
     match script_animations.await {
-        Ok(mut animations) => {
-            // println!("Animations: {:?}", animations);
-            all_animations.append(&mut animations);
+        Ok(animations) => {
+            for animation in animations {
+                if let Some(asset_id) = animation.request_id.clone() {
+                    if seen_ids.contains(&asset_id) {
+                        // Skip this animation (it's a duplicate)
+                        continue;
+                    }
+                    seen_ids.insert(asset_id);
+                    all_animations.push(animation);
+                }
+            }
         }
+
         Err(e) => {
             eprintln!("Failed to fetch animations: {:?}", e);
         }
     }
 
+    println!(
+        "Total Animations fetched from game {}",
+        all_animations.len()
+    );
     let uploader = Arc::new(AnimationUploader::new(args.cookie));
     match uploader
         .reupload_all_animations(all_animations, args.group.clone(), args.threads.clone())
