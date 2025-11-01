@@ -7,6 +7,7 @@ use roboat::ide::ide_types::NewAnimation;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use tokio::time;
 
 pub struct AnimationUploader {
     pub roblosecurity: String,
@@ -84,6 +85,7 @@ impl AnimationUploader {
         group_id: Option<u64>,
         task_count: Option<u64>,
     ) -> Result<HashMap<String, String>, RoboatError> {
+        let rate_limit_until = Arc::new(tokio::sync::Mutex::new(None::<tokio::time::Instant>));
         let max_concurrent_tasks = task_count.unwrap_or(500);
 
         let semaphore = Arc::new(Semaphore::new(max_concurrent_tasks as usize));
@@ -103,6 +105,7 @@ impl AnimationUploader {
                 let location = location.to_string();
                 let request_id = animation.request_id.clone();
                 let group_id = group_id.clone();
+                let rate_limit_until = rate_limit_until.clone();
 
                 let task = tokio::spawn(async move {
                     let _permit = semaphore.acquire().await.unwrap();
@@ -111,6 +114,18 @@ impl AnimationUploader {
                     // Retry logic for upload_animation
                     let max_upload_retries: usize = 5;
                     let mut last_error = None;
+
+                    // Check if we should wait for rate limit
+                    loop {
+                        let until = *rate_limit_until.lock().await;
+                        if let Some(wake_time) = until {
+                            if tokio::time::Instant::now() < wake_time {
+                                tokio::time::sleep_until(wake_time).await;
+                                continue;
+                            }
+                        }
+                        break;
+                    }
 
                     for attempt in 1..=max_upload_retries {
                         match self_arc
@@ -135,6 +150,27 @@ impl AnimationUploader {
                                     index + 1,
                                     e
                                 );
+
+                                match e {
+                                    RoboatError::TooManyRequests
+                                    | RoboatError::InternalServerError => {
+                                        let time_sleep = (attempt as u64) * 30;
+                                        println!(
+                                            "{:?} hit: All threads sleeping {} seconds",
+                                            e, time_sleep
+                                        );
+
+                                        let wake_time = tokio::time::Instant::now()
+                                            + tokio::time::Duration::from_secs(time_sleep);
+
+                                        // Set the global rate limit
+                                        *rate_limit_until.lock().await = Some(wake_time);
+
+                                        tokio::time::sleep_until(wake_time).await;
+                                    }
+                                    _ => {}
+                                }
+
                                 last_error = Some(e);
 
                                 // Don't sleep on the last attempt
@@ -350,10 +386,34 @@ mod internal {
                         println!("got no responses");
                         break;
                     }
+                    // TODO: make refactor should_retry code and add both ratelimit logic and retry
+                    // logic more gracefully, because the both unwrap for roboat errors
                     Err(e) => {
+                        if attempts > MAX_RETRIES {
+                            return Err(anyhow::anyhow!(
+                                "Couldn't fetch metadata; Max retries was exceeded"
+                            ));
+                        }
                         println!("error checking asset metadata: {}", e);
+                        attempts += 1;
+                        if let Some(roboat_error) = e.downcast_ref::<RoboatError>() {
+                            match roboat_error {
+                                RoboatError::TooManyRequests => {
+                                    let time_sleep: u64 = (attempts as u64) * 30;
+                                    println!(
+                                        "Ratelimited by fetching asset metadata sleeping {}, (Could be caused by blocked VPN or proxy)",
+                                        time_sleep
+                                    );
+                                    time::sleep(Duration::from_secs(time_sleep)).await;
+
+                                    continue;
+                                }
+                                _ => {}
+                            }
+                        }
+
                         if self.should_retry(&e, attempts, MAX_RETRIES) {
-                            attempts += 1;
+                            // attempts += 1;
                             timeout_seconds += 1;
                             println!(
                                 "Request failed, retrying with higher timeout: attempts {}/{} ({})",
