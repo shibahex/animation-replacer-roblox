@@ -128,7 +128,7 @@ mod internal {
             use tokio::time::{Duration, timeout};
 
             let max_retries: usize = 3;
-            const TIMEOUT_SECS: u64 = 3;
+            const TIMEOUT_SECS: u64 = 15;
 
             let client = Client::new();
 
@@ -147,7 +147,7 @@ mod internal {
                         }
                     }
                     Err(e) => {
-                        println!("Getting btres from url error: {:?}", e);
+                        println!("Getting file from animation url error: {:?}", e);
                         if attempt == max_retries {
                             return Err(RoboatError::InternalServerError);
                         }

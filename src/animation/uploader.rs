@@ -330,7 +330,7 @@ mod internal {
                 let initial_payload = self.create_batch_payloads(asset_ids);
 
                 match self
-                    .check_asset_metadata(initial_payload, init_place_id, Duration::from_secs(5))
+                    .check_asset_metadata(initial_payload, init_place_id, Duration::from_secs(10))
                     .await
                 {
                     Ok(Some(responses)) => {
