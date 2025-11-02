@@ -65,7 +65,8 @@ You will also need to open Roblox Studio and save the game as a file for the Ani
 
 > [!NOTE]
 > If you're uploading the game through a group, be sure to include the ``--group "GROUP_ID"`` flag.
-> AND make sure the account has a LEGACY role with permissions to manage and create assets
+>
+> make sure the account has a LEGACY role with permissions to manage and create assets to avoid Bad Request
 
 <!-- > ⚠️ This project is currently under active development.   -->
 <!-- > Installation instructions will be provided in a future release. ⚠️ -->
