@@ -15,7 +15,7 @@ impl StudioParser {
     /// * Batch API does hang sometimes, fixed that with retries and 3 second timeout.
     pub async fn all_animations_in_scripts(&mut self) -> anyhow::Result<Vec<AssetBatchResponse>> {
         let script_refs = self.get_script_refs();
-        let pattern = Regex::new(r"rbxassetid://(\d{5,})").unwrap();
+        let pattern = Regex::new(r"rbxassetid:\/\/(\d{5,})").unwrap();
 
         // Collect and deduplicate all IDs from all scripts
         let mut all_ids: HashSet<u64> = HashSet::new();
