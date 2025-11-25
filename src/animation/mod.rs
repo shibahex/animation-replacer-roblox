@@ -3,7 +3,9 @@ use crate::StudioParser;
 use roboat::RoboatError;
 use roboat::assetdelivery::AssetBatchResponse;
 
+pub type UploadTask = tokio::task::JoinHandle<Result<(Option<String>, String), RoboatError>>;
 pub mod info;
+pub mod tasks;
 pub mod uploader;
 
 // Implement uploader code into the studio struct
