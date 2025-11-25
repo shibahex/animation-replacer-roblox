@@ -1,15 +1,19 @@
 use bytes::Bytes;
 use roboat::RoboatError;
+use roboat::assetdelivery::AssetBatchResponse;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::time::Duration;
 
+use super::uploader::AnimationUploader;
 use crate::animation::UploadTask;
 
-use super::uploader::AnimationUploader;
-
 const MAX_UPLOAD_RETRIES: usize = 5;
+
+// ============================================================================
+// RATE LIMITER
+// ============================================================================
 
 /// Handles rate limiting across all concurrent tasks
 pub struct RateLimiter {
@@ -53,111 +57,49 @@ impl RateLimiter {
     }
 }
 
-/// Parameters for spawning an upload task
-pub struct UploadTaskParams {
-    pub roblosecurity: Arc<String>,
-    pub index: usize,
-    pub request_id: Option<String>,
-    pub location: String,
-    pub group_id: Option<u64>,
-    pub semaphore: Arc<Semaphore>,
-    pub rate_limiter: Arc<RateLimiter>,
-    pub total_animations: usize,
-}
+// ============================================================================
+// PUBLIC FUNCTIONS - Upload Task Management
+// ============================================================================
 
-/// Spawns a single upload task with all necessary context
-pub fn spawn_upload_task(
-    params: UploadTaskParams,
-) -> tokio::task::JoinHandle<Result<(Option<String>, String), RoboatError>> {
-    tokio::spawn(async move {
-        // Acquire semaphore permit
-        let _permit = params.semaphore.acquire().await.unwrap();
-
-        // Create uploader instance
-        let uploader = AnimationUploader::new((*params.roblosecurity).clone());
-
-        // Download animation file
-        let animation_file = uploader.file_bytes_from_url(params.location).await?;
-
-        // Wait for rate limit if needed
-        params.rate_limiter.wait_if_limited().await;
-
-        // Upload with retry logic
-        let new_animation_id = upload_with_retry(
-            &uploader,
-            animation_file,
-            params.group_id,
-            &params.rate_limiter,
-            params.index,
-            params.total_animations,
-            params
-                .request_id
-                .clone()
-                .unwrap_or("Cant find id".to_string()),
-        )
-        .await?;
-
-        Ok((params.request_id, new_animation_id))
-    })
-}
-
-/// Uploads animation with automatic retry logic for rate limits and server errors
-async fn upload_with_retry(
-    uploader: &AnimationUploader,
-    animation_file: Bytes,
+/// Spawns all upload tasks for concurrent animation uploads
+pub fn spawn_upload_tasks(
+    uploader: Arc<AnimationUploader>,
+    animations: Vec<AssetBatchResponse>,
     group_id: Option<u64>,
-    rate_limiter: &Arc<RateLimiter>,
-    index: usize,
+    max_concurrent_tasks: u64,
     total_animations: usize,
-    request_id: String,
-) -> Result<String, RoboatError> {
-    let mut last_error = None;
+) -> Vec<UploadTask> {
+    let semaphore = Arc::new(Semaphore::new(max_concurrent_tasks as usize));
+    let roblosecurity = Arc::new(uploader.roblosecurity.clone());
+    let rate_limiter = uploader.rate_limiter.clone_arc();
 
-    for attempt in 1..=MAX_UPLOAD_RETRIES {
-        match uploader
-            .upload_animation(animation_file.clone(), group_id)
-            .await
-        {
-            Ok(new_animation_id) => {
-                println!(
-                    "Success uploading animation {}/{} ({} remaining)",
-                    request_id,
-                    total_animations,
-                    total_animations - (index + 1)
-                );
-                return Ok(new_animation_id);
-            }
-            Err(e) => {
-                eprintln!(
-                    "Upload attempt {}/{} failed for animation {}: {}",
-                    attempt, MAX_UPLOAD_RETRIES, request_id, e
-                );
+    animations
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, animation)| {
+            let location = animation
+                .locations
+                .as_ref()
+                .and_then(|locs| locs.first())
+                .and_then(|loc| loc.location.as_ref())?
+                .to_string();
 
-                // Handle rate limits and server errors
-                if matches!(
-                    e,
-                    RoboatError::TooManyRequests | RoboatError::InternalServerError
-                ) {
-                    let sleep_time = (attempt as u64) * 30;
-                    rate_limiter.set_rate_limit(sleep_time).await;
-                    rate_limiter.wait_if_limited().await;
-                }
-
-                last_error = Some(e);
-
-                // Small delay between retries (except last attempt)
-                if attempt < MAX_UPLOAD_RETRIES {
-                    tokio::time::sleep(Duration::from_millis(1000)).await;
-                }
-            }
-        }
-    }
-
-    Err(last_error.unwrap())
+            Some(spawn_single_upload_task(
+                roblosecurity.clone(),
+                index,
+                animation.request_id.clone(),
+                location,
+                group_id,
+                semaphore.clone(),
+                rate_limiter.clone(),
+                total_animations,
+            ))
+        })
+        .collect()
 }
 
 /// Collects results from all upload tasks
-pub async fn collect_task_results(
+pub async fn collect_upload_results(
     tasks: Vec<UploadTask>,
 ) -> Result<HashMap<String, String>, RoboatError> {
     let mut animation_hashmap = HashMap::new();
@@ -196,4 +138,104 @@ pub async fn collect_task_results(
     }
 
     Ok(animation_hashmap)
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/// Spawns a single upload task with all necessary context
+fn spawn_single_upload_task(
+    roblosecurity: Arc<String>,
+    index: usize,
+    request_id: Option<String>,
+    location: String,
+    group_id: Option<u64>,
+    semaphore: Arc<Semaphore>,
+    rate_limiter: Arc<RateLimiter>,
+    total_animations: usize,
+) -> UploadTask {
+    tokio::spawn(async move {
+        // Acquire semaphore permit
+        let _permit = semaphore.acquire().await.unwrap();
+
+        // Create uploader instance
+        let uploader = AnimationUploader::new((*roblosecurity).clone());
+
+        // Download animation file
+        let animation_file = uploader.file_bytes_from_url(location).await?;
+
+        // Wait for rate limit if needed
+        rate_limiter.wait_if_limited().await;
+
+        // Upload with retry logic
+        let new_animation_id = upload_animation_with_retry(
+            &uploader,
+            animation_file,
+            group_id,
+            &rate_limiter,
+            index,
+            total_animations,
+            request_id.clone().unwrap_or_else(|| "unknown".to_string()),
+        )
+        .await?;
+
+        Ok((request_id, new_animation_id))
+    })
+}
+
+/// Uploads animation with automatic retry logic for rate limits and server errors
+async fn upload_animation_with_retry(
+    uploader: &AnimationUploader,
+    animation_file: Bytes,
+    group_id: Option<u64>,
+    rate_limiter: &Arc<RateLimiter>,
+    index: usize,
+    total_animations: usize,
+    request_id: String,
+) -> Result<String, RoboatError> {
+    let mut last_error = None;
+
+    for attempt in 1..=MAX_UPLOAD_RETRIES {
+        match uploader
+            .upload_animation(animation_file.clone(), group_id)
+            .await
+        {
+            Ok(new_animation_id) => {
+                println!(
+                    "Success uploading animation {} - {}/{} ({} remaining)",
+                    request_id,
+                    index + 1,
+                    total_animations,
+                    total_animations - (index + 1)
+                );
+                return Ok(new_animation_id);
+            }
+            Err(e) => {
+                eprintln!(
+                    "Upload attempt {}/{} failed for animation {}: {}",
+                    attempt, MAX_UPLOAD_RETRIES, request_id, e
+                );
+
+                // Handle rate limits and server errors
+                if matches!(
+                    e,
+                    RoboatError::TooManyRequests | RoboatError::InternalServerError
+                ) {
+                    let sleep_time = (attempt as u64) * 30;
+                    rate_limiter.set_rate_limit(sleep_time).await;
+                    rate_limiter.wait_if_limited().await;
+                }
+
+                last_error = Some(e);
+
+                // Small delay between retries (except last attempt)
+                if attempt < MAX_UPLOAD_RETRIES {
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                }
+            }
+        }
+    }
+
+    Err(last_error.unwrap())
 }
