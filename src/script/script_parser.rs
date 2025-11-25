@@ -15,27 +15,37 @@ impl StudioParser {
     /// * Batch API does hang sometimes, fixed that with retries and 3 second timeout.
     pub async fn all_animations_in_scripts(&mut self) -> anyhow::Result<Vec<AssetBatchResponse>> {
         let script_refs = self.get_script_refs();
-        let pattern = Regex::new(r"rbxassetid:\/\/(\d{5,})").unwrap();
+        let pattern =
+            Regex::new(r"(?:rbxassetid:\/\/|http:\/\/www\.roblox\.com\/asset\/\?id=)(\d{6,})")
+                .unwrap();
 
         // Collect and deduplicate all IDs from all scripts
         let mut all_ids: HashSet<u64> = HashSet::new();
         for script_ref in &script_refs {
-            if let Some(instance) = self.dom.get_by_ref(*script_ref) {
-                if let Some(Variant::String(source)) =
+            if let Some(instance) = self.dom.get_by_ref(*script_ref)
+                && let Some(Variant::String(source)) =
                     instance.properties.get(&Ustr::from("Source"))
-                {
-                    let ids_in_script = pattern
-                        .find_iter(source)
-                        .filter_map(|m| m.as_str().parse::<u64>().ok());
-
-                    all_ids.extend(ids_in_script);
+            {
+                let cleaned_text: String = source
+                    .trim()
+                    .to_string()
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .collect();
+                // Iterate over all matches in the source
+                for cap in pattern.captures_iter(&cleaned_text) {
+                    if let Some(id_match) = cap.get(1)
+                        && let Ok(id) = id_match.as_str().parse::<u64>()
+                    {
+                        all_ids.insert(id);
+                    }
                 }
             }
         }
-
         // Convert to Vec and fetch assets
         let mut id_list: Vec<u64> = all_ids.into_iter().collect();
         id_list.sort();
+        println!("{:?}", id_list);
         println!("Got all animations from scripts: {}", id_list.len());
         self.fetch_animation_assets(id_list).await
     }
@@ -54,5 +64,3 @@ impl StudioParser {
             .collect()
     }
 }
-
-mod internal {}
