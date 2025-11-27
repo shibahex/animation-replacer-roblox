@@ -106,8 +106,7 @@ having AI (Claude) only help with ONLY the readme, lifetimes, and some refactors
 ---
 
 <div align="center">
-   This is my first Rust project, I'm still learning Rust. So any contributions or suggestions will be accepted.
-
+   This is my first Rust project, I'm still learning Rust. So any contributions or suggestions will be accepted.<br>
    P.S credit to https://github.com/shibahex is appreciated if you clone and upload this repo 
 
 **⭐ If this project helped you, consider giving it a star! ⭐**
