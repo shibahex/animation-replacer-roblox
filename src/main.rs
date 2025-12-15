@@ -26,6 +26,10 @@ struct Args {
     /// How many concurrent tasks using semaphore. [defaulted to 5]
     #[arg(long, short)]
     threads: Option<u64>,
+
+    /// Search every big digits in scripts if flag is active (instead of just scanning for rbxasset)
+    #[arg(long, short)]
+    unformatted_ids: bool,
 }
 
 #[tokio::main]
@@ -67,7 +71,7 @@ async fn main() {
         }
     }
 
-    let script_animations = parser.all_animations_in_scripts();
+    let script_animations = parser.all_animations_in_scripts(args.unformatted_ids);
 
     match script_animations.await {
         Ok(animations) => {
@@ -94,7 +98,7 @@ async fn main() {
     );
     let uploader = Arc::new(AnimationUploader::new(args.cookie));
     match uploader
-        .reupload_all_animations(all_animations, args.group.clone(), args.threads.clone())
+        .reupload_all_animations(all_animations, args.group, args.threads)
         .await
     {
         Ok(animation_mapping) => {
