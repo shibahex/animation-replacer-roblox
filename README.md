@@ -59,12 +59,7 @@ You will also need to open Roblox Studio and save the game as a file for the Ani
    cargo run -- --cookie "COOKIEHERE" --file "example.rbxl" --output "output.rbxl"
    ```
 
-> [!NOTE]
-> Recommended to use ``--unformatted-ids`` flag if the program fails to scape all Ids for scripts/animations arent defined as rbxassetid={ID} or roblox.com/asset/?id={ID}.
-
-   ```bash
-   cargo run -- --cookie "COOKIEHERE" --file "example.rbxl" --output "output.rbxl" --unformatted-ids
-   ```
+append ``--unformatted-ids`` to the command if the program fails to scape all Ids for scripts/animations arent defined as rbxassetid={ID} or roblox.com/asset/?id={ID}.
 
 
 <div align="center">
