@@ -4,30 +4,14 @@
 
 **Animation Transfering/Spoofing** is an automated process designed to fix the handling of third party animations in your Roblox game. This program will scrape Roblox files, spoof/reupload animations, and republish them to ensure animation transfer when you publish your game.
 <div align="center">
-
+<header>Video Showcase</header>
+   
 [![Showcase Video](https://img.youtube.com/vi/URB9llET-w8/0.jpg)](https://www.youtube.com/watch?v=URB9llET-w8 "Showcase Video")
-<footer>Video Showcase</footer>
 </div>
 
->    [!WARNING]
->    This program has been unstable due to the lack of updates after roblox's changes.
->    Major bug on fetching animations will be resolved soon, then will try to make it stable again
->    
-> Report issues here: https://github.com/shibahex/animation-replacer-roblox/issues
+## 📦 Installation (GUIDE)
 
-## 📝 Development Status
-- ✅ Scrape animations in lua scripts
-- ✅ Scrape animation objects in the game file
-- ✅ Fetch animation metadata, file contents, and asset types
-- ✅ Upload multiple animations in a concurrent system; using [semaphore](https://docs.rs/semaphore/latest/semaphore/)
-- ✅ Writing animations back to script source 
-- ✅ Flags and user configuration for easy use
-- ✅ Replace the animation instances in-game (Only replaces scripts for now)  
-- ❌ Rename the Animations as the same as the ones it replaces (Requires extra API calls for scripts)
-
-## 📦 Installation
-
-1. **Clone the repository**
+1. **Clone the repository [(video)](https://www.youtube.com/watch?v=4DGk2zJtEp8)**
    ```bash
    git clone https://github.com/yourusername/animation-replacer-roblox.git
    cd animation-replacer-roblox
@@ -37,7 +21,7 @@
    ```bash
    cargo build --release
    ```
-> 🪟 For Windows users heres: [cargo install guide](https://doc.rust-lang.org/cargo/getting-started/installation.html) (to fix cargo not working)
+> 🪟 For Windows users heres: [cargo install guide](https://doc.rust-lang.org/cargo/getting-started/installation.html) (click the rustup-init.exe href)
 
 3. **Run the application**
 
@@ -59,7 +43,7 @@ You will also need to open Roblox Studio and save the game as a file for the Ani
    cargo run -- --cookie "COOKIEHERE" --file "example.rbxl" --output "output.rbxl"
    ```
 
-append ``--unformatted-ids`` to the command if the program fails to scape all Ids for scripts OR animations arent defined as rbxassetid={ID} or roblox.com/asset/?id={ID} in the script's source code.
+append ``--unformatted-ids`` to the command if the program fails to scape all Ids for scripts OR animations arent formatted as rbxassetid={ID} or roblox.com/asset/?id={ID} in any script's source code.
 
 
 <div align="center">
@@ -88,6 +72,17 @@ The tool requires minimal setup:
 - **Output (Optional)**: Use the --output {NAME} flag to avoid data loss
 - **Threads (Optional)**: the --threads {NUM} flag is how many concurrent tasks need to run (default is 5)
 - **Scan additional IDs in scripts (Optional)** Use the --unformatted-ids flag to scan every big number in scripts
+
+## 📝 Development Status
+- ✅ Scrape animations in lua scripts
+- ✅ Scrape animation objects in the game file
+- ✅ Fetch animation metadata, file contents, and asset types
+- ✅ Upload multiple animations in a concurrent system; using [semaphore](https://docs.rs/semaphore/latest/semaphore/)
+- ✅ Writing animations back to script source 
+- ✅ Flags and user configuration for easy use
+- ✅ Replace the animation instances in-game (Only replaces scripts for now)  
+- ❌ Rename the Animations as the same as the ones it replaces (Requires extra API calls for scripts)
+
 ## 🚨 Important Notes
 
 ### Disclaimer
