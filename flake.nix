@@ -15,7 +15,7 @@
           clippy
           rust-analyzer
           glib
-          rustup
+          #         rustup
 
           # Rust packages depends on this
           pkg-config
