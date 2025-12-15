@@ -59,6 +59,14 @@ You will also need to open Roblox Studio and save the game as a file for the Ani
    cargo run -- --cookie "COOKIEHERE" --file "example.rbxl" --output "output.rbxl"
    ```
 
+> [!NOTE]
+> Recommended to use ``--unformatted-ids`` flag if the program fails to scape all Ids for scripts/animations arent defined as rbxassetid={ID} or roblox.com/asset/?id={ID}.
+
+   ```bash
+   cargo run -- --cookie "COOKIEHERE" --file "example.rbxl" --output "output.rbxl" --unformatted-ids
+   ```
+
+
 <div align="center">
 ⚠️ Animations won't function in games owned by a group ⚠️
 </div align="center">
@@ -79,12 +87,12 @@ You will also need to open Roblox Studio and save the game as a file for the Ani
 
 ## ⚙️ Configuration
 The tool requires minimal setup:
-- **Roblox Cookie (REQUIRED)**: Your authentication token for accessing Roblox services
-- **Target File (REQUIRED)**: --file requires the path of the file to scan
-- **Group id (Optional)**: Upload to a group with --group flag
-- **Output (Optional)**: Use the --output flag to avoid data loss
-- **Threads (Optional)**: the --threads flag is how many concurrent tasks need to run (default is 5)
-
+- **Roblox Cookie (REQUIRED)**: --cookie {STRING} for your authentication token for accessing Roblox services
+- **Target File (REQUIRED)**: --file {NAME} required for the path of the file to scan
+- **Group id (Optional)**: Upload to a group with --group {NUM} flag
+- **Output (Optional)**: Use the --output {NAME} flag to avoid data loss
+- **Threads (Optional)**: the --threads {NUM} flag is how many concurrent tasks need to run (default is 5)
+- **Scan additional IDs in scripts (Optional)** Use the --unformatted-ids flag to scan every big number in scripts
 ## 🚨 Important Notes
 
 ### Disclaimer
