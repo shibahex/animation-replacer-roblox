@@ -40,7 +40,7 @@ You will also need to open Roblox Studio and save the game as a file for the Ani
 > Recommended to use the ``--output`` flag to avoid data loss if the game corrupts. 
 
    ```bash
-   cargo run -- --cookie "COOKIEHERE" --file "example.rbxl" --output "output.rbxl"
+   cargo run --release -- --cookie "COOKIEHERE" --file "example.rbxl" --output "output.rbxl"
    ```
 
 append ``--unformatted-ids`` to the command if the program fails to scape all Ids for scripts OR animations arent formatted as rbxassetid={ID} or roblox.com/asset/?id={ID} in any script's source code.
