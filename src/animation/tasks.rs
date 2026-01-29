@@ -114,11 +114,12 @@ pub async fn collect_upload_results(
             Ok(Ok((None, _))) => {
                 eprintln!("Warning: Upload succeeded but no request_id available");
             }
-            Ok(Err(e)) => {
+            Ok(Err((request_id, e))) => {
                 if matches!(e, RoboatError::BadRequest) {
                     eprintln!(
-                        "Upload API error: Cookie may lack required permissions\n\
-                         For group uploads, ensure the cookie has ALL Asset and Experience permissions"
+                        "Upload API error for {:?}: Cookie may lack required permissions\n\
+            For group uploads, ensure the cookie has ALL Asset and Experience permissions",
+                        request_id
                     );
                 }
                 errors.push(e);
@@ -163,7 +164,10 @@ fn spawn_single_upload_task(
         let uploader = AnimationUploader::new((*roblosecurity).clone());
 
         // Download animation file
-        let animation_file = uploader.file_bytes_from_url(location).await?;
+        let animation_file = uploader
+            .file_bytes_from_url(location)
+            .await
+            .map_err(|e| (request_id.clone(), e))?;
 
         // Wait for rate limit if needed
         rate_limiter.wait_if_limited().await;
@@ -178,7 +182,8 @@ fn spawn_single_upload_task(
             total_animations,
             request_id.clone().unwrap_or_else(|| "unknown".to_string()),
         )
-        .await?;
+        .await
+        .map_err(|e| (request_id.clone(), e))?;
 
         Ok((request_id, new_animation_id))
     })
@@ -233,7 +238,10 @@ async fn upload_animation_with_retry(
                 if attempt < MAX_UPLOAD_RETRIES {
                     tokio::time::sleep(Duration::from_millis(1000)).await;
                 } else {
-                    println!("[FAIL] failed to upload {}", request_id)
+                    println!(
+                        "[FAIL] failed to upload {} (Could not be an animation)",
+                        request_id
+                    )
                 }
             }
         }
