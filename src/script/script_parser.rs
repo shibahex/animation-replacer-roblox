@@ -55,7 +55,7 @@ impl StudioParser {
         let mut id_list: Vec<u64> = all_ids.into_iter().collect();
         id_list.sort();
         println!("{:?}", id_list);
-        println!("Got all animations from scripts: {}", id_list.len());
+        println!("Got asset ids from scripts: {}", id_list.len());
         self.fetch_animation_assets(id_list).await
     }
 
