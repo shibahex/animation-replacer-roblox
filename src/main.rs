@@ -62,7 +62,11 @@ async fn main() {
                         continue;
                     }
                     seen_ids.insert(asset_id);
-                    all_animations.push(animation);
+
+                    // Only scan animations
+                    if animation.asset_type_id == Some(24) {
+                        all_animations.push(animation);
+                    }
                 }
             }
         }
@@ -82,7 +86,11 @@ async fn main() {
                         continue;
                     }
                     seen_ids.insert(asset_id);
-                    all_animations.push(animation);
+
+                    // Only scan animations
+                    if animation.asset_type_id == Some(24) {
+                        all_animations.push(animation);
+                    }
                 }
             }
         }
