@@ -29,8 +29,9 @@
         PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
 
         shellHook = ''
-                    export SHELL=${pkgs.nushell}/bin/nu
-          				'';
+                              export SHELL=${pkgs.nushell}/bin/nu
+          		    nu
+          		    '';
 
       };
     };
