@@ -232,6 +232,8 @@ async fn upload_animation_with_retry(
                 // Small delay between retries (except last attempt)
                 if attempt < MAX_UPLOAD_RETRIES {
                     tokio::time::sleep(Duration::from_millis(1000)).await;
+                } else {
+                    println!("[FAIL] failed to upload {}", request_id)
                 }
             }
         }
