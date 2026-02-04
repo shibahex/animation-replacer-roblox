@@ -2,6 +2,7 @@ use animation_replace_roblox::StudioParser;
 use animation_replace_roblox::animation::uploader::AnimationUploader;
 use clap::Parser;
 use roboat::assetdelivery::AssetBatchResponse;
+use roboat::catalog::AssetType;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -52,6 +53,8 @@ async fn main() {
     };
 
     let mut all_animations: Vec<AssetBatchResponse> = Vec::new();
+    let mut all_audios: Vec<AssetBatchResponse> = Vec::new();
+
     let workspace_animations = parser.workspace_animations();
     match workspace_animations.await {
         Ok(animations) => {
@@ -63,9 +66,10 @@ async fn main() {
                     }
                     seen_ids.insert(asset_id);
 
-                    // Only scan animations
-                    if animation.asset_type_id == Some(24) {
+                    if animation.asset_type == Some(AssetType::Animation) {
                         all_animations.push(animation);
+                    } else if animation.asset_type == Some(AssetType::Audio) {
+                        all_audios.push(animation);
                     }
                 }
             }
@@ -87,9 +91,10 @@ async fn main() {
                     }
                     seen_ids.insert(asset_id);
 
-                    // Only scan animations
-                    if animation.asset_type_id == Some(24) {
+                    if animation.asset_type == Some(AssetType::Animation) {
                         all_animations.push(animation);
+                    } else if animation.asset_type == Some(AssetType::Audio) {
+                        all_audios.push(animation);
                     }
                 }
             }
@@ -100,6 +105,7 @@ async fn main() {
         }
     }
 
+    println!("audios, {:?}", all_audios);
     println!(
         "Total Animations fetched from game {}",
         all_animations.len()
