@@ -19,7 +19,7 @@ shellexpand = "3.1.1"
 log = "0.4.27"
 clap = { version = "4.1.13", features = ["derive"] }
 reqwest = "0.12.21"
-roboat = { git = "https://github.com/shibahex/roboat-extras.git", branch = "main" }
+roboat = { git = "https://github.com/shibahex/roboat-extras.git", branch = "dev-branch" }
 #roboat = "0.36.0"
 anyhow = "1.0.98"
 indexmap = "2.10.0"
