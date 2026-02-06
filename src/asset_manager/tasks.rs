@@ -6,8 +6,8 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::time::Duration;
 
-use super::uploader::AnimationUploader;
-use crate::animation::UploadTask;
+use super::uploader::AssetUploader;
+use crate::asset_manager::UploadTask;
 
 const MAX_UPLOAD_RETRIES: usize = 5;
 
@@ -63,7 +63,7 @@ impl RateLimiter {
 
 /// Spawns all upload tasks for concurrent animation uploads
 pub fn spawn_upload_tasks(
-    uploader: Arc<AnimationUploader>,
+    uploader: Arc<AssetUploader>,
     animations: Vec<AssetBatchResponse>,
     group_id: Option<u64>,
     max_concurrent_tasks: u64,
@@ -161,7 +161,7 @@ fn spawn_single_upload_task(
         let _permit = semaphore.acquire().await.unwrap();
 
         // Create uploader instance
-        let uploader = AnimationUploader::new((*roblosecurity).clone());
+        let uploader = AssetUploader::new((*roblosecurity).clone());
 
         // Download animation file
         let animation_file = uploader
@@ -191,7 +191,7 @@ fn spawn_single_upload_task(
 
 /// Uploads animation with automatic retry logic for rate limits and server errors
 async fn upload_animation_with_retry(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     animation_file: Bytes,
     group_id: Option<u64>,
     rate_limiter: &Arc<RateLimiter>,

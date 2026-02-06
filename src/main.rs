@@ -1,5 +1,5 @@
 use animation_replace_roblox::StudioParser;
-use animation_replace_roblox::animation::uploader::AnimationUploader;
+use animation_replace_roblox::asset_manager::uploader::AssetUploader;
 use clap::Parser;
 use roboat::assetdelivery::AssetBatchResponse;
 use roboat::catalog::AssetType;
@@ -110,7 +110,7 @@ async fn main() {
         "Total Animations fetched from game {}",
         all_animations.len()
     );
-    let uploader = Arc::new(AnimationUploader::new(args.cookie));
+    let uploader = Arc::new(AssetUploader::new(args.cookie));
     match uploader
         .reupload_all_animations(all_animations, args.group, args.threads)
         .await

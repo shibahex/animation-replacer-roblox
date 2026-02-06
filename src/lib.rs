@@ -1,7 +1,7 @@
 use rbx_dom_weak::{Instance, WeakDom};
 
 /// A module for uploading animations
-pub mod animation;
+pub mod asset_manager;
 
 /// A module for handling parsing and editing studio files
 pub mod studio;
@@ -9,7 +9,7 @@ pub mod studio;
 /// A module for handling parsing and editing on scripts, in studio files.
 pub mod script;
 
-pub use animation::uploader::AnimationUploader;
+pub use asset_manager::uploader::AssetUploader;
 pub use studio::workplace_parser::StudioParserBuilder;
 
 /// Represents an animation with its instance and ID.

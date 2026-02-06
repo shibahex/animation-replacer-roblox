@@ -7,13 +7,13 @@ use roboat::{
 use std::collections::HashMap;
 use tokio::time::Duration;
 
-use crate::AnimationUploader;
+use crate::AssetUploader;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 10;
 const BATCH_SIZE: usize = 250;
 const MAX_FETCH_RETRIES: u32 = 9;
 
-impl AnimationUploader {
+impl AssetUploader {
     /// Fetches animation metadata for multiple assets.
     pub async fn fetch_animation_assets(
         &self,
@@ -66,7 +66,7 @@ impl AnimationUploader {
 
 /// Fetches a single batch of animation metadata with retry logic.
 async fn fetch_single_batch(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     asset_ids: &[u64],
 ) -> anyhow::Result<Vec<AssetBatchResponse>> {
     let init_place_id = get_initial_place_id(uploader, asset_ids).await.unwrap_or(0);
@@ -92,7 +92,7 @@ async fn fetch_single_batch(
 
 /// Attempts to fetch a batch of assets with a given place ID.
 async fn attempt_batch_fetch(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     asset_ids: &[u64],
     place_id: u64,
     success_responses: &mut Vec<AssetBatchResponse>,
@@ -132,7 +132,7 @@ async fn attempt_batch_fetch(
 
 /// Processes batch responses, separating successes and failures.
 async fn process_batch_responses(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     responses: Vec<AssetBatchResponse>,
     success_responses: &mut Vec<AssetBatchResponse>,
     failed_ids: &mut HashMap<u64, Vec<u64>>,
@@ -150,7 +150,7 @@ async fn process_batch_responses(
 
 /// Handles a failed asset by finding its place ID.
 async fn handle_failed_asset(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     asset_id: u64,
     failed_ids: &mut HashMap<u64, Vec<u64>>,
 ) {
@@ -167,7 +167,7 @@ async fn handle_failed_asset(
 
 /// Handles errors during batch fetch with retry logic.
 async fn handle_fetch_error(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     error: &anyhow::Error,
     attempts: &mut u32,
 ) -> anyhow::Result<bool> {
@@ -202,7 +202,7 @@ async fn handle_fetch_error(
 
 /// Resolves failed assets by retrying with correct place IDs.
 async fn resolve_failed_assets(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     asset_and_places: HashMap<u64, Vec<u64>>,
 ) -> Vec<AssetBatchResponse> {
     let mut resolved_responses = Vec::new();
@@ -235,10 +235,7 @@ async fn resolve_failed_assets(
 // [PLACE ID FETCHING]
 
 /// Gets the initial place ID from the first valid asset.
-async fn get_initial_place_id(
-    uploader: &AnimationUploader,
-    asset_ids: &[u64],
-) -> anyhow::Result<u64> {
+async fn get_initial_place_id(uploader: &AssetUploader, asset_ids: &[u64]) -> anyhow::Result<u64> {
     let mut empty_map = HashMap::new();
 
     for &asset_id in asset_ids {
@@ -257,7 +254,7 @@ async fn get_initial_place_id(
 
 /// Gets or fetches a place ID for an asset, using cache when available.
 async fn fetch_asset_place_id(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     asset_id: u64,
     cached_places: &mut HashMap<u64, Vec<u64>>,
 ) -> anyhow::Result<u64> {
@@ -315,7 +312,7 @@ async fn fetch_asset_place_id(
 
 /// Fetches place_id for an asset by checking if it's owned by a user or group.
 async fn get_place_id_from_asset(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     asset_id: u64,
     cached_places: &mut HashMap<u64, Vec<u64>>,
 ) -> anyhow::Result<u64> {
@@ -381,7 +378,7 @@ async fn get_group_place_id(group_id: u64) -> anyhow::Result<u64> {
 
 /// Checks asset metadata for up to 250 assets with a specific place_id header.
 async fn check_asset_metadata(
-    uploader: &AnimationUploader,
+    uploader: &AssetUploader,
     asset_ids: Vec<AssetBatchPayload>,
     place_id: u64,
     timeout_secs: Duration,

@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use roboat::ClientBuilder;
 use roboat::RoboatError;
-use roboat::ide::ide_types::NewAnimation;
+use roboat::ide::ide_types::NewStudioAsset;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,12 +9,12 @@ use super::tasks::{RateLimiter, collect_upload_results, spawn_upload_tasks};
 
 const DEFAULT_CONCURRENT_TASKS: u64 = 50;
 
-pub struct AnimationUploader {
+pub struct AssetUploader {
     pub roblosecurity: String,
     pub(super) rate_limiter: Arc<RateLimiter>,
 }
 
-impl AnimationUploader {
+impl AssetUploader {
     /// Creates a new AnimationUploader with a roblosecurity cookie.
     pub fn new(roblosecurity: String) -> Self {
         Self {
@@ -33,14 +33,15 @@ impl AnimationUploader {
             .roblosecurity(self.roblosecurity.clone())
             .build();
 
-        let animation = NewAnimation {
+        let animation = NewStudioAsset {
+            asset_type: roboat::catalog::AssetType::Animation,
             group_id,
             name: "reuploaded_animation".to_string(),
             description: "This is a example".to_string(),
-            animation_data,
+            asset_data: animation_data,
         };
 
-        client.upload_new_animation(animation).await
+        client.upload_studio_asset(animation).await
     }
 
     /// Reuploads multiple animations concurrently.
