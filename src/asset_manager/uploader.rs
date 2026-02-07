@@ -1,12 +1,13 @@
 use bytes::Bytes;
 use roboat::ClientBuilder;
 use roboat::RoboatError;
+use roboat::catalog::AssetType;
 use roboat::ide::ide_types::NewStudioAsset;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::tasks::{RateLimiter, collect_upload_results, spawn_upload_tasks};
-
+use super::ratelimiter::RateLimiter;
+use super::tasks::{UploadContext, collect_upload_results};
 const DEFAULT_CONCURRENT_TASKS: u64 = 50;
 
 pub struct AssetUploader {
@@ -24,44 +25,40 @@ impl AssetUploader {
     }
 
     /// Uploads a single animation to Roblox.
-    pub async fn upload_animation(
+    pub async fn upload_asset(
         &self,
-        animation_data: Bytes,
+        asset_data: Bytes,
         group_id: Option<u64>,
+        asset_type: AssetType,
     ) -> Result<String, RoboatError> {
         let client = ClientBuilder::new()
             .roblosecurity(self.roblosecurity.clone())
             .build();
 
-        let animation = NewStudioAsset {
-            asset_type: roboat::catalog::AssetType::Animation,
+        let asset = NewStudioAsset {
+            asset_type,
             group_id,
             name: "reuploaded_animation".to_string(),
             description: "This is a example".to_string(),
-            asset_data: animation_data,
+            asset_data,
         };
 
-        client.upload_studio_asset(animation).await
+        client.upload_studio_asset(asset).await
     }
 
     /// Reuploads multiple animations concurrently.
-    pub async fn reupload_all_animations(
+    pub async fn reupload_all_assets(
         self: Arc<Self>,
-        animations: Vec<roboat::assetdelivery::AssetBatchResponse>,
+        assets: Vec<roboat::assetdelivery::AssetBatchResponse>,
         group_id: Option<u64>,
         task_count: Option<u64>,
     ) -> Result<HashMap<String, String>, RoboatError> {
         let max_concurrent_tasks = task_count.unwrap_or(DEFAULT_CONCURRENT_TASKS);
-        let total_animations = animations.len();
+        let total_assets = assets.len();
 
-        let tasks = spawn_upload_tasks(
-            self.clone(),
-            animations,
-            group_id,
-            max_concurrent_tasks,
-            total_animations,
-        );
+        let ctx = UploadContext::new(self, group_id, max_concurrent_tasks, total_assets);
 
+        let tasks = ctx.spawn_upload_tasks(assets);
         collect_upload_results(tasks).await
     }
 }
