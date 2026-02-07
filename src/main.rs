@@ -105,14 +105,16 @@ async fn main() {
         }
     }
 
-    println!("audios, {:?}", all_audios);
     println!(
         "Total Animations fetched from game {}",
         all_animations.len()
     );
+
+    println!("Total Audios fetched from game {}", all_audios.len());
+
     let uploader = Arc::new(AssetUploader::new(args.cookie));
     match uploader
-        .reupload_all_animations(all_animations, args.group, args.threads)
+        .reupload_all_assets(all_animations, args.group, args.threads)
         .await
     {
         Ok(animation_mapping) => {
