@@ -4,9 +4,9 @@
   outputs = { self, nixpkgs }:
     let pkgs = nixpkgs.legacyPackages."x86_64-linux";
 
-    in
-    {
+    in {
       devShells."x86_64-linux".default = pkgs.mkShell {
+        name = "rust-dev";
 
         buildInputs = with pkgs; [
           cargo
@@ -29,9 +29,10 @@
         PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
 
         shellHook = ''
-                              export SHELL=${pkgs.nushell}/bin/nu
-          		    nu
-          		    '';
+          export IN_NIX_SHELL="rust"
+          export SHELL=${pkgs.nushell}/bin/nu
+          exec nu
+        '';
 
       };
     };
