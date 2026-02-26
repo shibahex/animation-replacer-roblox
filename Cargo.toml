@@ -16,10 +16,12 @@ ustr = "1.1.0"
 rbx_types = "2.0.0"
 regex = "1.11.1"
 shellexpand = "3.1.1"
-log = "0.4.27"
 clap = { version = "4.1.13", features = ["derive"] }
 reqwest = "0.12.21"
 roboat = { git = "https://github.com/shibahex/roboat-extras.git", branch = "dev-branch" }
 #roboat = "0.36.0"
 anyhow = "1.0.98"
 indexmap = "2.10.0"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-appender = "0.2.4"

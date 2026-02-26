@@ -2,3 +2,4 @@
 *venv*
 /target/
 *.rbxl
+logs/
