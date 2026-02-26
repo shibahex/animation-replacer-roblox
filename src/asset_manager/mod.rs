@@ -6,9 +6,9 @@ use roboat::assetdelivery::AssetBatchResponse;
 pub type UploadTask =
     tokio::task::JoinHandle<Result<(Option<String>, String), (Option<String>, RoboatError)>>;
 pub mod info;
+pub mod ratelimiter;
 pub mod tasks;
 pub mod uploader;
-
 // Implement uploader code into the studio struct
 impl StudioParser {
     pub fn animation_uploader(&self) -> Result<AssetUploader, RoboatError> {

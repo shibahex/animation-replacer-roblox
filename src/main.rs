@@ -4,7 +4,11 @@ use clap::Parser;
 use roboat::assetdelivery::AssetBatchResponse;
 use roboat::catalog::AssetType;
 use std::collections::HashSet;
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
+use tracing::{info, warn};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -33,8 +37,64 @@ struct Args {
     unformatted_ids: bool,
 }
 
+fn cleanup_old_logs(log_dir: &str, prefix: &str, keep: usize) {
+    let dir = Path::new(log_dir);
+
+    if !dir.exists() {
+        return;
+    }
+
+    let mut entries: Vec<_> = fs::read_dir(dir)
+        .expect("Can't read log dir")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with(prefix))
+        .collect();
+
+    entries.sort_by_key(|e| {
+        e.metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+    });
+
+    if entries.len() > keep {
+        for entry in &entries[..entries.len() - keep] {
+            match fs::remove_file(entry.path()) {
+                Ok(_) => println!("Deleted old log: {:?}", entry.path()),
+                Err(e) => println!("Failed to delete {:?}: {}", entry.path(), e),
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    // Clean up old logs, keeping only the 5 most recent
+    cleanup_old_logs("logs", "app.log", 5);
+
+    let file_appender = tracing_appender::rolling::hourly("logs", "app.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    // Log to both stdout and file
+    tracing_subscriber::registry()
+        // stdout: info and above
+        .with(
+            fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_target(false) // removes `animation_replace_roblox::asset_manager::info`
+                .with_thread_ids(false)
+                .with_file(false)
+                .with_line_number(false)
+                .with_filter(EnvFilter::new("info")),
+        )
+        // file: debug and above
+        .with(
+            fmt::layer()
+                .with_writer(non_blocking)
+                .with_ansi(false)
+                .with_filter(EnvFilter::new("debug")),
+        )
+        .init();
+
     let args = Args::parse();
     let file_path = shellexpand::tilde(&args.file).to_string();
     let mut seen_ids: HashSet<String> = HashSet::new();
@@ -47,7 +107,7 @@ async fn main() {
     let mut parser = match builder.build() {
         Ok(parser) => parser,
         Err(e) => {
-            eprintln!("Error loading file: {}", e);
+            warn!("Error loading file: {}", e);
             return;
         }
     };
@@ -75,7 +135,7 @@ async fn main() {
             }
         }
         Err(e) => {
-            eprintln!("Failed to workspace animations: {:?}", e);
+            warn!("Failed to workspace animations: {:?}", e);
         }
     }
 
@@ -101,18 +161,24 @@ async fn main() {
         }
 
         Err(e) => {
-            eprintln!("Failed to fetch animations: {:?}", e);
+            warn!("Failed to fetch animations: {:?}", e);
         }
     }
 
-    println!("audios, {:?}", all_audios);
-    println!(
+    info!(
         "Total Animations fetched from game {}",
         all_animations.len()
     );
+    // println!(
+    //     "Total Animations fetched from game {}",
+    //     all_animations.len()
+    // );
+
+    info!("Total Audios fetched from game {}", all_audios.len());
+
     let uploader = Arc::new(AssetUploader::new(args.cookie));
     match uploader
-        .reupload_all_animations(all_animations, args.group, args.threads)
+        .reupload_all_assets(all_animations, args.group, args.threads)
         .await
     {
         Ok(animation_mapping) => {
@@ -124,7 +190,7 @@ async fn main() {
             parser.update_game_animations(&animation_mapping);
         }
         Err(e) => {
-            eprintln!("Failed to upload animations: {:?}", e);
+            warn!("Failed to upload animations: {:?}", e);
         }
     }
 
