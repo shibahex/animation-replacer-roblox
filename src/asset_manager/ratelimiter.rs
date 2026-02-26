@@ -1,5 +1,5 @@
 use tokio::time::Duration;
-
+use tracing::info;
 // ============================================================================
 // RATE LIMITER
 // ============================================================================
@@ -26,7 +26,7 @@ impl RateLimiter {
     pub async fn set_rate_limit(&self, duration_secs: u64) {
         let wake_time = tokio::time::Instant::now() + Duration::from_secs(duration_secs);
         *self.until.lock().await = Some(wake_time);
-        println!(
+        info!(
             "Global rate limit set: all tasks sleeping {} seconds",
             duration_secs
         );

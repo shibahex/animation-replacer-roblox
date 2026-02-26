@@ -6,6 +6,7 @@ use roboat::{
 };
 use std::collections::HashMap;
 use tokio::time::Duration;
+use tracing::{debug, error, info, warn};
 
 use crate::AssetUploader;
 
@@ -51,7 +52,7 @@ impl AssetUploader {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Getting file from animation url error: {:?}", e);
+                    error!("Getting file from animation url error: {:?}", e);
                     if attempt == MAX_RETRIES {
                         return Err(RoboatError::InternalServerError);
                     }
@@ -116,7 +117,7 @@ async fn attempt_batch_fetch(
                 break;
             }
             Ok(None) => {
-                println!("No responses received from batch fetch");
+                warn!("No responses received from batch fetch");
                 break;
             }
             Err(e) => {
@@ -156,11 +157,11 @@ async fn handle_failed_asset(
 ) {
     match fetch_asset_place_id(uploader, asset_id, failed_ids).await {
         Ok(place_id) => {
-            println!("Found place_id: {} for asset: {}", place_id, asset_id);
+            info!("Found place_id: {} for asset: {}", place_id, asset_id);
             failed_ids.entry(place_id).or_default().push(asset_id);
         }
         Err(e) => {
-            eprintln!("Failed to get place_id for asset {}: {}", asset_id, e);
+            error!("Failed to get place_id for asset {}: {}", asset_id, e);
         }
     }
 }
@@ -182,6 +183,7 @@ async fn handle_fetch_error(
         && matches!(roboat_error, RoboatError::TooManyRequests)
     {
         let sleep_time = (*attempts as u64) * 30;
+        info!("attempt_batch_fetch got ratelimit, waiting {}", sleep_time);
         uploader.rate_limiter.set_rate_limit(sleep_time).await;
         uploader.rate_limiter.wait_if_limited().await;
         return Ok(true);
@@ -189,7 +191,7 @@ async fn handle_fetch_error(
 
     // Handle retryable errors
     if should_retry_error(error) {
-        println!(
+        warn!(
             "Request failed, retrying (attempt {}/{}): {}",
             attempts, MAX_FETCH_RETRIES, error
         );
@@ -214,18 +216,18 @@ async fn resolve_failed_assets(
             Ok(Some(responses)) => {
                 for response in responses {
                     if response.errors.is_none() {
-                        println!("Successfully resolved asset: {:?}", response.request_id);
+                        // info!("successfully resolved asset: {:?}", response.request_id);
                         resolved_responses.push(response);
                     } else {
-                        eprintln!(
+                        error!(
                             "Failed to resolve asset {:?} with place_id {}",
                             response.request_id, place_id
                         );
                     }
                 }
             }
-            Ok(None) => println!("No response for place_id {}", place_id),
-            Err(e) => eprintln!("Error resolving assets for place_id {}: {:?}", place_id, e),
+            Ok(None) => warn!("No response for place_id {}", place_id),
+            Err(e) => error!("Error resolving assets for place_id {}: {:?}", place_id, e),
         }
     }
 
@@ -240,9 +242,12 @@ async fn get_initial_place_id(uploader: &AssetUploader, asset_ids: &[u64]) -> an
 
     for &asset_id in asset_ids {
         match fetch_asset_place_id(uploader, asset_id, &mut empty_map).await {
-            Ok(place_id) => return Ok(place_id),
+            Ok(place_id) => {
+                info!("Found place_id: {} for asset: {}", place_id, asset_id);
+                return Ok(place_id);
+            }
             Err(e) => {
-                eprintln!("Error getting place for asset {}: {:?}", asset_id, e);
+                error!("Error getting place for asset {}: {:?}", asset_id, e);
             }
         }
     }
@@ -261,8 +266,8 @@ async fn fetch_asset_place_id(
     // Check cache first
     for (&place_id, assets) in cached_places.iter() {
         if assets.contains(&asset_id) {
-            println!(
-                "Found place_id {} in cache for asset {}",
+            debug!(
+                "found place_id {} in cache for asset {}",
                 place_id, asset_id
             );
             return Ok(place_id);
@@ -273,7 +278,7 @@ async fn fetch_asset_place_id(
     let mut attempt = 0;
     loop {
         attempt += 1;
-        println!(
+        debug!(
             "Attempt {} to fetch place_id for asset {}",
             attempt, asset_id
         );
@@ -281,8 +286,8 @@ async fn fetch_asset_place_id(
         match get_place_id_from_asset(uploader, asset_id, cached_places).await {
             Ok(place_id) => {
                 cached_places.entry(place_id).or_default().push(asset_id);
-                println!(
-                    "Successfully fetched place_id {} for asset {} after {} attempts",
+                debug!(
+                    "fetched place_id {} for asset {} after {} attempts",
                     place_id, asset_id, attempt
                 );
                 return Ok(place_id);
@@ -290,14 +295,14 @@ async fn fetch_asset_place_id(
             Err(e) => {
                 if let Some(RoboatError::TooManyRequests) = e.downcast_ref::<RoboatError>() {
                     let sleep_time = 4 + (attempt % 10);
-                    println!(
+                    warn!(
                         "Rate limited while fetching place_id (attempt {}), \
                          setting global rate limit for {} seconds...",
                         attempt, sleep_time
                     );
                     uploader.rate_limiter.set_rate_limit(sleep_time).await;
                     uploader.rate_limiter.wait_if_limited().await;
-                    println!("Rate limit wait complete, retrying place_id fetch...");
+                    info!("Rate limit wait complete, retrying place_id fetch...");
                 } else {
                     return Err(anyhow::anyhow!(
                         "Failed to get place_id after {} attempts: {}",

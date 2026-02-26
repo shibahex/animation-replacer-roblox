@@ -3,6 +3,7 @@ use rbx_dom_weak::types::Variant;
 use regex::Regex;
 use roboat::assetdelivery::AssetBatchResponse;
 use std::collections::HashSet;
+use tracing::info;
 use ustr::Ustr;
 
 impl StudioParser {
@@ -54,8 +55,8 @@ impl StudioParser {
         // Convert to Vec and fetch assets
         let mut id_list: Vec<u64> = all_ids.into_iter().collect();
         id_list.sort();
-        println!("{:?}", id_list);
-        println!("Got asset ids from scripts: {}", id_list.len());
+        info!("{:?}", id_list);
+        info!("Got asset ids from scripts: {}", id_list.len());
         self.fetch_animation_assets(id_list).await
     }
 

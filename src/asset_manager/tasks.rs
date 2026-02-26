@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::time::Duration;
 
+use tracing::{error, info, warn};
 const MAX_UPLOAD_RETRIES: usize = 5;
 
 // ============================================================================
@@ -116,7 +117,7 @@ impl UploadContext {
                 .await
             {
                 Ok(new_asset_id) => {
-                    println!(
+                    info!(
                         "[{:?}] Success uploading {} - {}/{} ({} remaining)",
                         asset_type,
                         request_id,
@@ -127,7 +128,7 @@ impl UploadContext {
                     return Ok(new_asset_id);
                 }
                 Err(e) => {
-                    eprintln!(
+                    warn!(
                         "Upload attempt {}/{} failed for {:?} {}: {}",
                         attempt, MAX_UPLOAD_RETRIES, asset_type, request_id, e
                     );
@@ -146,7 +147,7 @@ impl UploadContext {
                     if attempt < MAX_UPLOAD_RETRIES {
                         tokio::time::sleep(Duration::from_millis(1000)).await;
                     } else {
-                        eprintln!("[FAIL] Failed to upload {:?} {}", asset_type, request_id);
+                        error!("Failed to upload {:?} {}", asset_type, request_id);
                     }
                 }
             }
@@ -170,25 +171,24 @@ pub async fn collect_upload_results(
                 finished_asset_hashmap.insert(request_id, new_asset_id);
             }
             Ok(Ok((None, _))) => {
-                eprintln!("Warning: Upload succeeded but no request_id available");
+                warn!("Upload succeeded but no request_id available");
             }
             Ok(Err((request_id, e))) => {
                 if matches!(e, RoboatError::BadRequest) {
-                    eprintln!(
-                        "Upload API error for {:?}: Cookie may lack required permissions\n\
-            For group uploads, ensure the cookie has ALL Asset and Experience permissions",
+                    error!(
+                        "Failed to upload asset: {:?} (cookie may lack required permissions)",
                         request_id
                     );
                 }
                 errors.push(e);
             }
             Err(join_error) => {
-                eprintln!("Task execution failed: {}", join_error);
+                error!("Task execution failed: {}", join_error);
             }
         }
     }
 
-    eprintln!(
+    info!(
         "Upload summary: {} failed out of {} total tasks",
         errors.len(),
         total_tasks
