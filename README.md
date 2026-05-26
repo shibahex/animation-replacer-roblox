@@ -8,6 +8,12 @@
    
 [![Showcase Video](https://img.youtube.com/vi/URB9llET-w8/0.jpg)](https://www.youtube.com/watch?v=URB9llET-w8 "Showcase Video")
 </div>
+<div align="center">
+discord server for support: https://discord.gg/KV38jFFz
+</div>
+
+>    [!WARNING]
+>    Due to recent updates to the animation APIs this bot isn't functional, working on a patch hopefully by June 2026.
 
 ## 📦 Installation (GUIDE)
 
