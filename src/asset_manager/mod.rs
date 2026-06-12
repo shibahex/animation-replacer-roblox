@@ -12,12 +12,15 @@ pub mod uploader;
 // Implement uploader code into the studio struct
 impl StudioParser {
     pub fn animation_uploader(&self) -> Result<AssetUploader, RoboatError> {
-        match &self.roblosecurity {
-            Some(cookie) => Ok(AssetUploader::new(cookie.clone())),
-            None => Err(RoboatError::InvalidRoblosecurity),
+        println!("{:?} {:?}", self.api_key, self.roblosecurity);
+        match (&self.roblosecurity, &self.api_key) {
+            (Some(cookie), Some(api_key)) => {
+                Ok(AssetUploader::new(cookie.clone(), api_key.clone()))
+            }
+            (None, _) => Err(RoboatError::InvalidRoblosecurity),
+            (_, None) => Err(RoboatError::InvalidRoblosecurity),
         }
     }
-
     pub async fn fetch_animation_assets(
         &self,
         asset_ids: Vec<u64>,

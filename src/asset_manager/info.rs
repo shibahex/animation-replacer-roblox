@@ -358,7 +358,7 @@ async fn get_place_id_from_asset(
 /// Gets the root place ID for a user.
 async fn get_user_place_id(user_id: u64) -> anyhow::Result<u64> {
     let client = ClientBuilder::new().build();
-    let games_response = client.user_games(user_id).await?;
+    let games_response = client.user_games(user_id, Some(true), None).await?;
 
     games_response
         .data
@@ -370,7 +370,7 @@ async fn get_user_place_id(user_id: u64) -> anyhow::Result<u64> {
 /// Gets the root place ID for a group.
 async fn get_group_place_id(group_id: u64) -> anyhow::Result<u64> {
     let client = ClientBuilder::new().build();
-    let games_response = client.group_games(group_id).await?;
+    let games_response = client.group_games(group_id, Some(true), None).await?;
 
     games_response
         .data

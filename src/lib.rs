@@ -37,6 +37,7 @@ impl<'a> Animation<'a> {
 /// Parser for Roblox Studio files with optional authentication.
 pub struct StudioParser {
     pub roblosecurity: Option<String>,
+    pub api_key: Option<String>,
     pub dom: WeakDom,
 }
 
