@@ -8,12 +8,6 @@
    
 [![Showcase Video](https://img.youtube.com/vi/URB9llET-w8/0.jpg)](https://www.youtube.com/watch?v=URB9llET-w8 "Showcase Video")
 </div>
-<div align="center">
-discord server for support: https://discord.gg/KV38jFFz
-</div>
-
->    [!WARNING]
->    Due to recent updates to the animation APIs this bot isn't functional, working on a patch hopefully by June 2026.
 
 ## 📦 Installation (GUIDE)
 
@@ -31,7 +25,7 @@ discord server for support: https://discord.gg/KV38jFFz
 
 3. **Run the application**
 
-To run the tool, you’ll need your Roblox ``.ROBLOSECURITY`` cookie.
+To run the tool, you’ll need your Roblox ``.ROBLOSECURITY`` cookie and a `API Key`.
 This is required to authenticate your account for uploading animations.
 
 >    [!WARNING]
@@ -41,12 +35,14 @@ This is required to authenticate your account for uploading animations.
 > 
 > If you're concerned about using your main account, consider creating an alternate account, adding it as an admin to your group, and uploading from there.
 
+To create a `API Key` go to https://create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab and create an `API Key` with permissions for `assets` and add both read and write.
+
 You will also need to open Roblox Studio and save the game as a file for the Animation Replacer.
 > [!NOTE]
 > Recommended to use the ``--output`` flag to avoid data loss if the game corrupts. 
 
    ```bash
-   cargo run --release -- --cookie "COOKIEHERE" --file "example.rbxl" --output "output.rbxl"
+   cargo run --release -- --cookie "COOKIEHERE" --api-key "APIKEY_HERE" --file "example.rbxl" --output "output.rbxl"
    ```
 
 append ``--unformatted-ids`` to the command if the program fails to scape all Ids for scripts OR animations arent formatted as rbxassetid={ID} or roblox.com/asset/?id={ID} in any script's source code.
