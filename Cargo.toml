@@ -18,7 +18,7 @@ regex = "1.11.1"
 shellexpand = "3.1.1"
 clap = { version = "4.1.13", features = ["derive"] }
 reqwest = "0.12.21"
-roboat = { git = "https://github.com/shibahex/roboat-extras.git", branch = "dev-branch" }
+roboat = { git = "https://github.com/shibahex/roboat-extras.git", branch = "upload-animation-fix" }
 #roboat = "0.36.0"
 anyhow = "1.0.98"
 indexmap = "2.10.0"
