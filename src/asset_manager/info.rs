@@ -4,7 +4,7 @@ use roboat::{
     ClientBuilder, RoboatError,
     assetdelivery::{AssetBatchPayload, AssetBatchResponse},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::time::Duration;
 use tracing::{debug, error, info, warn};
 
@@ -13,6 +13,10 @@ use crate::AssetUploader;
 const DEFAULT_TIMEOUT_SECS: u64 = 10;
 const BATCH_SIZE: usize = 250;
 const MAX_FETCH_RETRIES: u32 = 9;
+// Max times to sleep-and-retry when place_id fetch hits a rate limit.
+// Without this cap, a single poisoned asset retries forever and keeps
+// firing the global rate limiter for all other tasks.
+const MAX_PLACE_ID_RATELIMIT_RETRIES: u32 = 5;
 
 impl AssetUploader {
     /// Fetches animation metadata for multiple assets.
@@ -70,21 +74,38 @@ async fn fetch_single_batch(
     uploader: &AssetUploader,
     asset_ids: &[u64],
 ) -> anyhow::Result<Vec<AssetBatchResponse>> {
-    let init_place_id = get_initial_place_id(uploader, asset_ids).await.unwrap_or(0);
+    // Success cache: creator_id -> place_id.
+    // One group = one group_games API call, rest are HashMap hits.
+    let mut place_id_cache: HashMap<u64, u64> = HashMap::new();
+
+    // Failure cache: creator_ids that returned no games from the API.
+    // Group 34981778 appears ~30 times. Without this: 30 API calls, all fail.
+    // With this: 1 API call fails, 29 instant Err from HashSet::contains.
+    let mut failed_creators: HashSet<u64> = HashSet::new();
+
+    let init_place_id = get_initial_place_id(
+        uploader,
+        asset_ids,
+        &mut place_id_cache,
+        &mut failed_creators,
+    )
+    .await
+    .unwrap_or(0);
+
     let mut success_responses = Vec::new();
     let mut failed_ids: HashMap<u64, Vec<u64>> = HashMap::new();
 
-    // Try initial fetch
     attempt_batch_fetch(
         uploader,
         asset_ids,
         init_place_id,
         &mut success_responses,
         &mut failed_ids,
+        &mut place_id_cache,
+        &mut failed_creators,
     )
     .await?;
 
-    // Resolve failed fetches with correct place IDs
     let mut resolved = resolve_failed_assets(uploader, failed_ids).await;
     success_responses.append(&mut resolved);
 
@@ -98,6 +119,8 @@ async fn attempt_batch_fetch(
     place_id: u64,
     success_responses: &mut Vec<AssetBatchResponse>,
     failed_ids: &mut HashMap<u64, Vec<u64>>,
+    place_id_cache: &mut HashMap<u64, u64>,
+    failed_creators: &mut HashSet<u64>,
 ) -> anyhow::Result<()> {
     let mut attempts = 0;
 
@@ -113,7 +136,15 @@ async fn attempt_batch_fetch(
         .await
         {
             Ok(Some(responses)) => {
-                process_batch_responses(uploader, responses, success_responses, failed_ids).await;
+                process_batch_responses(
+                    uploader,
+                    responses,
+                    success_responses,
+                    failed_ids,
+                    place_id_cache,
+                    failed_creators,
+                )
+                .await;
                 break;
             }
             Ok(None) => {
@@ -137,6 +168,8 @@ async fn process_batch_responses(
     responses: Vec<AssetBatchResponse>,
     success_responses: &mut Vec<AssetBatchResponse>,
     failed_ids: &mut HashMap<u64, Vec<u64>>,
+    place_id_cache: &mut HashMap<u64, u64>,
+    failed_creators: &mut HashSet<u64>,
 ) {
     for response in responses {
         if response.errors.is_none() {
@@ -144,18 +177,36 @@ async fn process_batch_responses(
         } else if let Some(request_id) = response.request_id
             && let Ok(asset_id) = request_id.parse::<u64>()
         {
-            handle_failed_asset(uploader, asset_id, failed_ids).await;
+            handle_failed_asset(
+                uploader,
+                asset_id,
+                failed_ids,
+                place_id_cache,
+                failed_creators,
+            )
+            .await;
         }
     }
 }
 
 /// Handles a failed asset by finding its place ID.
+/// Uses place_id_cache (successes) and failed_creators (failures) to skip repeat API calls.
 async fn handle_failed_asset(
     uploader: &AssetUploader,
     asset_id: u64,
     failed_ids: &mut HashMap<u64, Vec<u64>>,
+    place_id_cache: &mut HashMap<u64, u64>,
+    failed_creators: &mut HashSet<u64>,
 ) {
-    match fetch_asset_place_id(uploader, asset_id, failed_ids).await {
+    match fetch_asset_place_id(
+        uploader,
+        asset_id,
+        failed_ids,
+        place_id_cache,
+        failed_creators,
+    )
+    .await
+    {
         Ok(place_id) => {
             info!("Found place_id: {} for asset: {}", place_id, asset_id);
             failed_ids.entry(place_id).or_default().push(asset_id);
@@ -178,7 +229,6 @@ async fn handle_fetch_error(
         return Err(anyhow::anyhow!("Max retries exceeded"));
     }
 
-    // Handle rate limiting - affects all concurrent operations
     if let Some(roboat_error) = error.downcast_ref::<RoboatError>()
         && matches!(roboat_error, RoboatError::TooManyRequests)
     {
@@ -189,7 +239,6 @@ async fn handle_fetch_error(
         return Ok(true);
     }
 
-    // Handle retryable errors
     if should_retry_error(error) {
         warn!(
             "Request failed, retrying (attempt {}/{}): {}",
@@ -216,7 +265,6 @@ async fn resolve_failed_assets(
             Ok(Some(responses)) => {
                 for response in responses {
                     if response.errors.is_none() {
-                        // info!("successfully resolved asset: {:?}", response.request_id);
                         resolved_responses.push(response);
                     } else {
                         error!(
@@ -237,11 +285,22 @@ async fn resolve_failed_assets(
 // [PLACE ID FETCHING]
 
 /// Gets the initial place ID from the first valid asset.
-async fn get_initial_place_id(uploader: &AssetUploader, asset_ids: &[u64]) -> anyhow::Result<u64> {
-    let mut empty_map = HashMap::new();
-
+async fn get_initial_place_id(
+    uploader: &AssetUploader,
+    asset_ids: &[u64],
+    place_id_cache: &mut HashMap<u64, u64>,
+    failed_creators: &mut HashSet<u64>,
+) -> anyhow::Result<u64> {
     for &asset_id in asset_ids {
-        match fetch_asset_place_id(uploader, asset_id, &mut empty_map).await {
+        match fetch_asset_place_id(
+            uploader,
+            asset_id,
+            &mut HashMap::new(),
+            place_id_cache,
+            failed_creators,
+        )
+        .await
+        {
             Ok(place_id) => {
                 info!("Found place_id: {} for asset: {}", place_id, asset_id);
                 return Ok(place_id);
@@ -257,56 +316,70 @@ async fn get_initial_place_id(uploader: &AssetUploader, asset_ids: &[u64]) -> an
     ))
 }
 
-/// Gets or fetches a place ID for an asset, using cache when available.
+/// Gets or fetches a place ID for an asset, using both caches.
+///
+/// `place_id_cache`: creator_id -> place_id for known-good creators.
+/// `failed_creators`: creator_ids that returned no games. Instant Err, no API call.
+///
+/// Example - group 34981778 has no games:
+///   Asset 1: get_asset_info -> group 34981778 -> group_games() -> Err -> insert into failed_creators
+///   Asset 2: get_asset_info -> group 34981778 -> failed_creators.contains() -> instant Err, zero API calls
+///   Asset 3..N: same as asset 2
 async fn fetch_asset_place_id(
     uploader: &AssetUploader,
     asset_id: u64,
-    cached_places: &mut HashMap<u64, Vec<u64>>,
+    failed_ids: &mut HashMap<u64, Vec<u64>>,
+    place_id_cache: &mut HashMap<u64, u64>,
+    failed_creators: &mut HashSet<u64>,
 ) -> anyhow::Result<u64> {
-    // Check cache first
-    for (&place_id, assets) in cached_places.iter() {
+    // Check if any already-resolved place owns this asset_id
+    for (&place_id, assets) in failed_ids.iter() {
         if assets.contains(&asset_id) {
             debug!(
-                "found place_id {} in cache for asset {}",
+                "found place_id {} in failed_ids cache for asset {}",
                 place_id, asset_id
             );
             return Ok(place_id);
         }
     }
 
-    // Fetch with infinite retry logic for rate limits
-    let mut attempt = 0;
-    loop {
-        attempt += 1;
-        debug!(
-            "Attempt {} to fetch place_id for asset {}",
-            attempt, asset_id
-        );
+    let mut ratelimit_attempts: u32 = 0;
 
-        match get_place_id_from_asset(uploader, asset_id, cached_places).await {
+    loop {
+        debug!("Fetching place_id for asset {}", asset_id);
+
+        match get_place_id_from_asset(uploader, asset_id, place_id_cache, failed_creators).await {
             Ok(place_id) => {
-                cached_places.entry(place_id).or_default().push(asset_id);
-                debug!(
-                    "fetched place_id {} for asset {} after {} attempts",
-                    place_id, asset_id, attempt
-                );
+                debug!("fetched place_id {} for asset {}", place_id, asset_id);
                 return Ok(place_id);
             }
             Err(e) => {
                 if let Some(RoboatError::TooManyRequests) = e.downcast_ref::<RoboatError>() {
-                    let sleep_time = 4 + (attempt % 10);
+                    ratelimit_attempts += 1;
+
+                    // Cap rate-limit retries. Without this, a poisoned asset retries
+                    // forever, firing the global limiter each cycle and blocking everything.
+                    if ratelimit_attempts > MAX_PLACE_ID_RATELIMIT_RETRIES {
+                        return Err(anyhow::anyhow!(
+                            "Gave up on place_id for asset {} after {} rate-limit retries",
+                            asset_id,
+                            ratelimit_attempts
+                        ));
+                    }
+
+                    let sleep_time = 4 + (ratelimit_attempts as u64 % 10);
                     warn!(
-                        "Rate limited while fetching place_id (attempt {}), \
-                         setting global rate limit for {} seconds...",
-                        attempt, sleep_time
+                        "Rate limited fetching place_id for asset {} (attempt {}/{}), \
+                         sleeping {} seconds...",
+                        asset_id, ratelimit_attempts, MAX_PLACE_ID_RATELIMIT_RETRIES, sleep_time
                     );
                     uploader.rate_limiter.set_rate_limit(sleep_time).await;
                     uploader.rate_limiter.wait_if_limited().await;
                     info!("Rate limit wait complete, retrying place_id fetch...");
                 } else {
                     return Err(anyhow::anyhow!(
-                        "Failed to get place_id after {} attempts: {}",
-                        attempt,
+                        "Failed to get place_id after {} rate-limit retries: {}",
+                        ratelimit_attempts,
                         e
                     ));
                 }
@@ -316,10 +389,19 @@ async fn fetch_asset_place_id(
 }
 
 /// Fetches place_id for an asset by checking if it's owned by a user or group.
+///
+/// `place_id_cache` maps creator_id -> place_id (success cache).
+/// `failed_creators` holds creator_ids whose games list returned empty (failure cache).
+///
+/// Without both caches - group 34981778 (30 assets, no games):
+///   30 x get_asset_info() + 30 x group_games() = 60 API calls, all fail
+/// With both caches:
+///   30 x get_asset_info() + 1 x group_games() + 29 x HashSet::contains() = 31 calls
 async fn get_place_id_from_asset(
     uploader: &AssetUploader,
     asset_id: u64,
-    cached_places: &mut HashMap<u64, Vec<u64>>,
+    place_id_cache: &mut HashMap<u64, u64>,
+    failed_creators: &mut HashSet<u64>,
 ) -> anyhow::Result<u64> {
     let client = ClientBuilder::new()
         .roblosecurity(uploader.roblosecurity.to_string())
@@ -333,9 +415,35 @@ async fn get_place_id_from_asset(
             .parse::<u64>()
             .map_err(|e| anyhow::anyhow!("Failed to parse user_id '{}': {}", user_id, e))?;
 
-        let place_id = get_user_place_id(user_id_parsed).await?;
-        cached_places.entry(place_id).or_default().push(asset_id);
-        return Ok(place_id);
+        // Failure cache hit: user has no games, skip API call entirely
+        if failed_creators.contains(&user_id_parsed) {
+            debug!("Failure cache hit: user {} has no games", user_id_parsed);
+            return Err(anyhow::anyhow!(
+                "Couldn't find place for user {}",
+                user_id_parsed
+            ));
+        }
+
+        // Success cache hit: no user_games API call needed
+        if let Some(&cached_place_id) = place_id_cache.get(&user_id_parsed) {
+            debug!(
+                "Cache hit: user {} -> place_id {}",
+                user_id_parsed, cached_place_id
+            );
+            return Ok(cached_place_id);
+        }
+
+        match get_user_place_id(user_id_parsed).await {
+            Ok(place_id) => {
+                place_id_cache.insert(user_id_parsed, place_id);
+                return Ok(place_id);
+            }
+            Err(e) => {
+                // Store in failure cache so future assets from same user skip the API
+                failed_creators.insert(user_id_parsed);
+                return Err(e);
+            }
+        }
     }
 
     // Check if owned by group
@@ -344,9 +452,35 @@ async fn get_place_id_from_asset(
             .parse::<u64>()
             .map_err(|e| anyhow::anyhow!("Failed to parse group_id '{}': {}", group_id, e))?;
 
-        let place_id = get_group_place_id(group_id_parsed).await?;
-        cached_places.entry(place_id).or_default().push(asset_id);
-        return Ok(place_id);
+        // Failure cache hit: group has no games, skip API call entirely
+        if failed_creators.contains(&group_id_parsed) {
+            debug!("Failure cache hit: group {} has no games", group_id_parsed);
+            return Err(anyhow::anyhow!(
+                "Couldn't find place for group {}",
+                group_id_parsed
+            ));
+        }
+
+        // Success cache hit: no group_games API call needed
+        if let Some(&cached_place_id) = place_id_cache.get(&group_id_parsed) {
+            debug!(
+                "Cache hit: group {} -> place_id {}",
+                group_id_parsed, cached_place_id
+            );
+            return Ok(cached_place_id);
+        }
+
+        match get_group_place_id(group_id_parsed).await {
+            Ok(place_id) => {
+                place_id_cache.insert(group_id_parsed, place_id);
+                return Ok(place_id);
+            }
+            Err(e) => {
+                // Store in failure cache so future assets from same group skip the API
+                failed_creators.insert(group_id_parsed);
+                return Err(e);
+            }
+        }
     }
 
     Err(anyhow::anyhow!(
