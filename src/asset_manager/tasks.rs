@@ -77,8 +77,7 @@ impl UploadContext {
 
         tokio::spawn(async move {
             let _permit = ctx.semaphore.acquire().await.unwrap();
-
-            let asset_bytes = ctx
+            let asset_bytes: Bytes = ctx
                 .uploader
                 .file_bytes_from_url(location)
                 .await

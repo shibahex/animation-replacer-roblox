@@ -16,6 +16,10 @@ struct Args {
     #[arg(long, short)]
     cookie: String,
 
+    /// Open cloud API Key [with assets permissions]
+    #[arg(long)]
+    api_key: String,
+
     /// file PATH of the .rbxl file [REQUIRED]
     #[arg(long, short)]
     file: String,
@@ -102,6 +106,7 @@ async fn main() {
     // Build the parser with the roboat client
     let builder = StudioParser::builder()
         .file_path(&file_path)
+        .api_key(&args.api_key)
         .roblosecurity(&args.cookie);
 
     let mut parser = match builder.build() {
@@ -176,7 +181,7 @@ async fn main() {
 
     info!("Total Audios fetched from game {}", all_audios.len());
 
-    let uploader = Arc::new(AssetUploader::new(args.cookie));
+    let uploader = Arc::new(AssetUploader::new(args.cookie, args.api_key));
     match uploader
         .reupload_all_assets(all_animations, args.group, args.threads)
         .await

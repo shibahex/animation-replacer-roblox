@@ -2,9 +2,9 @@ use bytes::Bytes;
 use roboat::ClientBuilder;
 use roboat::RoboatError;
 use roboat::catalog::AssetType;
-use roboat::ide::ide_types::NewStudioAsset;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::info;
 
 use super::ratelimiter::RateLimiter;
 use super::tasks::{UploadContext, collect_upload_results};
@@ -12,14 +12,16 @@ const DEFAULT_CONCURRENT_TASKS: u64 = 50;
 
 pub struct AssetUploader {
     pub roblosecurity: String,
+    pub api_key: String,
     pub(super) rate_limiter: Arc<RateLimiter>,
 }
 
 impl AssetUploader {
     /// Creates a new AnimationUploader with a roblosecurity cookie.
-    pub fn new(roblosecurity: String) -> Self {
+    pub fn new(roblosecurity: String, api_key: String) -> Self {
         Self {
             roblosecurity,
+            api_key,
             rate_limiter: Arc::new(RateLimiter::new()),
         }
     }
@@ -35,15 +37,31 @@ impl AssetUploader {
             .roblosecurity(self.roblosecurity.clone())
             .build();
 
-        let asset = NewStudioAsset {
-            asset_type,
-            group_id,
-            name: "reuploaded_animation".to_string(),
-            description: "This is a example".to_string(),
-            asset_data,
-        };
+        let resp = client
+            .upload_animation(
+                self.api_key.clone(),
+                group_id,
+                "reuploaded_animation".to_string(),
+                "This is an example".to_string(),
+                &asset_data,
+            )
+            .await?;
 
-        client.upload_studio_asset(asset).await
+        loop {
+            let operation = client
+                .poll_upload_operation(self.api_key.clone(), resp.path.clone())
+                .await?;
+
+            if operation.done {
+                if let Some(asset_id) = operation.response.and_then(|resp| resp.asset_id) {
+                    info!("Uploaded complete! {:?}", asset_id);
+                    return Ok(asset_id);
+                }
+                // TODO: Dont just return internal server error
+                return Err(RoboatError::InternalServerError);
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
     }
 
     /// Reuploads multiple animations concurrently.

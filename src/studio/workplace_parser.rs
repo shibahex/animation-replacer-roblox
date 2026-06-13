@@ -60,6 +60,7 @@ impl StudioParser {
 pub struct StudioParserBuilder {
     file_path: Option<String>,
     roblosecurity: Option<String>,
+    api_key: Option<String>,
 }
 
 impl StudioParserBuilder {
@@ -76,6 +77,11 @@ impl StudioParserBuilder {
     /// Required for animation validation and re-uploading features.
     pub fn roblosecurity<S: Into<String>>(mut self, roblosecurity: S) -> Self {
         self.roblosecurity = Some(roblosecurity.into());
+        self
+    }
+
+    pub fn api_key<S: Into<String>>(mut self, api_key: S) -> Self {
+        self.api_key = Some(api_key.into());
         self
     }
 
@@ -96,6 +102,7 @@ impl StudioParserBuilder {
 
         Ok(StudioParser {
             roblosecurity: self.roblosecurity,
+            api_key: self.api_key,
             dom,
         })
     }
