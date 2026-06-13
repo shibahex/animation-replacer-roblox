@@ -53,11 +53,9 @@ impl AssetUploader {
                 .await?;
 
             if operation.done {
-                info!("Uploaded complete! {:?}", resp);
-                if let Some(resp) = operation.response {
-                    if let Some(asset_id) = resp.asset_id {
-                        return Ok(asset_id);
-                    }
+                if let Some(asset_id) = operation.response.and_then(|resp| resp.asset_id) {
+                    info!("Uploaded complete! {:?}", asset_id);
+                    return Ok(asset_id);
                 }
                 // TODO: Dont just return internal server error
                 return Err(RoboatError::InternalServerError);
