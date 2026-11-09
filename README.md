@@ -25,7 +25,7 @@
 
 3. **Run the application**
 
-To run the tool, you’ll need your Roblox ``.ROBLOSECURITY`` cookie.
+To run the tool, you’ll need your Roblox ``.ROBLOSECURITY`` cookie and a `API Key`.
 This is required to authenticate your account for uploading animations.
 
 >    [!WARNING]
@@ -35,12 +35,14 @@ This is required to authenticate your account for uploading animations.
 > 
 > If you're concerned about using your main account, consider creating an alternate account, adding it as an admin to your group, and uploading from there.
 
+To create a `API Key` go to https://create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab and create an `API Key` with permissions for `assets` and add both read and write.
+
 You will also need to open Roblox Studio and save the game as a file for the Animation Replacer.
 > [!NOTE]
 > Recommended to use the ``--output`` flag to avoid data loss if the game corrupts. 
 
    ```bash
-   cargo run --release -- --cookie "COOKIEHERE" --file "example.rbxl" --output "output.rbxl"
+   cargo run --release -- --cookie "COOKIEHERE" --api-key "APIKEY_HERE" --file "example.rbxl" --output "output.rbxl"
    ```
 
 append ``--unformatted-ids`` to the command if the program fails to scape all Ids for scripts OR animations arent formatted as rbxassetid={ID} or roblox.com/asset/?id={ID} in any script's source code.
@@ -67,9 +69,10 @@ append ``--unformatted-ids`` to the command if the program fails to scape all Id
 ## ⚙️ Configuration
 The tool requires minimal setup:
 - **Roblox Cookie (REQUIRED)**: --cookie {STRING} for your authentication token for accessing Roblox services
+- **ROBLOX API KEY (REQUIRED)**: --api-key {STRING} for the new cloud APIs we will need, for now its only used for the uploading API.
 - **Target File (REQUIRED)**: --file {NAME} required for the path of the file to scan
 - **Group id (Optional)**: Upload to a group with --group {NUM} flag
-- **Output (Optional)**: Use the --output {NAME} flag to avoid data loss
+- **Output (RECOMMENDED)**: Use the --output {NAME} flag to avoid data loss
 - **Threads (Optional)**: the --threads {NUM} flag is how many concurrent tasks need to run (default is 5)
 - **Scan additional IDs in scripts (Optional)** Use the --unformatted-ids flag to scan every big number in scripts
 
