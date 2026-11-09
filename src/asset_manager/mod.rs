@@ -12,7 +12,6 @@ pub mod uploader;
 // Implement uploader code into the studio struct
 impl StudioParser {
     pub fn animation_uploader(&self) -> Result<AssetUploader, RoboatError> {
-        println!("{:?} {:?}", self.api_key, self.roblosecurity);
         match (&self.roblosecurity, &self.api_key) {
             (Some(cookie), Some(api_key)) => {
                 Ok(AssetUploader::new(cookie.clone(), api_key.clone()))

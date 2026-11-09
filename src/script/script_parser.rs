@@ -7,14 +7,14 @@ use tracing::info;
 use ustr::Ustr;
 
 impl StudioParser {
-    /// Returns a vector of AssetBatchResponse (Animation Details from batch API) found in the script
+    /// Returns a vector of AssetBatchResponse (Asset Details from batch API) found in the scripts
     /// # Notes:
     /// Takes in a script, scans all the IDs into it then has batch_sizes of 250.
-    /// It posts 250 Ids at a time to the asset batch API then filters out everything but
-    /// animations.
+    /// It posts 250 Ids at a time to the asset batch API, which returns the asset type of
+    /// every id that is a valid asset.
     /// * Requires a cookie
     /// * Batch API does hang sometimes, fixed that with retries and 3 second timeout.
-    pub async fn all_animations_in_scripts(
+    pub async fn all_assets_in_scripts(
         &mut self,
         unformatted_search: bool,
     ) -> anyhow::Result<Vec<AssetBatchResponse>> {

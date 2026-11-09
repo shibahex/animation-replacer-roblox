@@ -2,8 +2,7 @@ use animation_replace_roblox::StudioParser;
 use animation_replace_roblox::asset_manager::uploader::AssetUploader;
 use clap::Parser;
 use roboat::assetdelivery::AssetBatchResponse;
-use roboat::catalog::AssetType;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -70,6 +69,21 @@ fn cleanup_old_logs(log_dir: &str, prefix: &str, keep: usize) {
     }
 }
 
+/// Adds assets that haven't been seen yet, skipping duplicates.
+fn collect_unique_assets(
+    assets: Vec<AssetBatchResponse>,
+    seen_ids: &mut HashSet<String>,
+    all_assets: &mut Vec<AssetBatchResponse>,
+) {
+    for asset in assets {
+        if let Some(asset_id) = asset.request_id.clone()
+            && seen_ids.insert(asset_id)
+        {
+            all_assets.push(asset);
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Clean up old logs, keeping only the 5 most recent
@@ -117,85 +131,43 @@ async fn main() {
         }
     };
 
-    let mut all_animations: Vec<AssetBatchResponse> = Vec::new();
-    let mut all_audios: Vec<AssetBatchResponse> = Vec::new();
+    let mut all_assets: Vec<AssetBatchResponse> = Vec::new();
 
-    let workspace_animations = parser.workspace_animations();
-    match workspace_animations.await {
-        Ok(animations) => {
-            for animation in animations {
-                if let Some(asset_id) = animation.request_id.clone() {
-                    if seen_ids.contains(&asset_id) {
-                        // Skip this animation (it's a duplicate)
-                        continue;
-                    }
-                    seen_ids.insert(asset_id);
-
-                    if animation.asset_type == Some(AssetType::Animation) {
-                        all_animations.push(animation);
-                    } else if animation.asset_type == Some(AssetType::Audio) {
-                        all_audios.push(animation);
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            warn!("Failed to workspace animations: {:?}", e);
-        }
+    match parser.workspace_assets().await {
+        Ok(assets) => collect_unique_assets(assets, &mut seen_ids, &mut all_assets),
+        Err(e) => warn!("Failed to fetch workspace assets: {:?}", e),
     }
 
-    let script_animations = parser.all_animations_in_scripts(args.unformatted_ids);
-
-    match script_animations.await {
-        Ok(animations) => {
-            for animation in animations {
-                if let Some(asset_id) = animation.request_id.clone() {
-                    if seen_ids.contains(&asset_id) {
-                        // Skip this animation (it's a duplicate)
-                        continue;
-                    }
-                    seen_ids.insert(asset_id);
-
-                    if animation.asset_type == Some(AssetType::Animation) {
-                        all_animations.push(animation);
-                    } else if animation.asset_type == Some(AssetType::Audio) {
-                        all_audios.push(animation);
-                    }
-                }
-            }
-        }
-
-        Err(e) => {
-            warn!("Failed to fetch animations: {:?}", e);
-        }
+    match parser.all_assets_in_scripts(args.unformatted_ids).await {
+        Ok(assets) => collect_unique_assets(assets, &mut seen_ids, &mut all_assets),
+        Err(e) => warn!("Failed to fetch script assets: {:?}", e),
     }
 
-    info!(
-        "Total Animations fetched from game {}",
-        all_animations.len()
-    );
-    // println!(
-    //     "Total Animations fetched from game {}",
-    //     all_animations.len()
-    // );
+    let mut type_counts: BTreeMap<String, usize> = BTreeMap::new();
+    for asset in &all_assets {
+        let type_name = asset
+            .asset_type
+            .map(|asset_type| asset_type.to_string())
+            .unwrap_or_else(|| "Unknown".to_string());
+        *type_counts.entry(type_name).or_default() += 1;
+    }
 
-    info!("Total Audios fetched from game {}", all_audios.len());
+    info!("Total assets fetched from game {}", all_assets.len());
+    for (type_name, count) in &type_counts {
+        info!("  {}: {}", type_name, count);
+    }
 
     let uploader = Arc::new(AssetUploader::new(args.cookie, args.api_key));
     match uploader
-        .reupload_all_assets(all_animations, args.group, args.threads)
+        .reupload_all_assets(all_assets, args.group, args.threads)
         .await
     {
-        Ok(animation_mapping) => {
-            // TODO: Instead of scanning and looping through a HashMap of u64, Make a HashMap of
-            // Animations, that includes instances, that way one loop will handle it all.
-            // Also optimize and delete values after updating them.
-
-            parser.update_script_animations(&animation_mapping);
-            parser.update_game_animations(&animation_mapping);
+        Ok(asset_mapping) => {
+            parser.update_script_assets(&asset_mapping);
+            parser.update_game_assets(&asset_mapping);
         }
         Err(e) => {
-            warn!("Failed to upload animations: {:?}", e);
+            warn!("Failed to upload assets: {:?}", e);
         }
     }
 

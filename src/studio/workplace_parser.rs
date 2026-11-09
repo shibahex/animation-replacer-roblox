@@ -1,14 +1,47 @@
 use crate::StudioParser;
 use rbx_binary::from_reader;
-use rbx_types::Variant;
+use rbx_types::{ContentType, Variant};
 use regex::Regex;
 use roboat::assetdelivery::AssetBatchResponse;
+use std::collections::HashSet;
 use std::fs::File;
 use std::path::Path;
-use ustr::Ustr;
+use std::sync::LazyLock;
+
+/// Matches an asset id in a content url, like `rbxassetid://123` or
+/// `http://www.roblox.com/asset/?id=123`, or a content url that is only digits.
+static ASSET_ID_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)^\s*(?:rbxassetid://|(?:https?://)?(?:www\.)?roblox\.com/asset/?\?id=)?(\d+)\s*$",
+    )
+    .unwrap()
+});
+
+/// Gets the asset id out of a content url. Returns `None` for built-in content
+/// like `rbxasset://textures/face.png`.
+pub fn asset_id_from_content(content: &str) -> Option<u64> {
+    ASSET_ID_PATTERN
+        .captures(content)
+        .and_then(|cap| cap.get(1))
+        .and_then(|id| id.as_str().parse::<u64>().ok())
+}
+
+/// Gets the content url string out of a property, if it holds one.
+/// Covers both the legacy `ContentId` type and the newer `Content` type.
+pub fn content_url(value: &Variant) -> Option<&str> {
+    match value {
+        Variant::ContentId(content_id) => Some(content_id.as_str()),
+        Variant::Content(content) => match content.value() {
+            ContentType::Uri(uri) => Some(uri.as_str()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
 
 impl StudioParser {
-    /// Finds Animation instances in the workspace and returns their metadata.
+    /// Finds every asset referenced by an instance property in the file (AnimationId,
+    /// SoundId, Texture, Image, MeshId, ...) and returns their metadata.
     ///
     /// # Examples
     ///
@@ -17,25 +50,18 @@ impl StudioParser {
     ///     .file_path("MyPlace.rbxl")
     ///     .roblosecurity("cookie")
     ///     .build()?;
-    /// let animations = parser.workspace_animations().await?;
+    /// let assets = parser.workspace_assets().await?;
     /// ```
-    pub async fn workspace_animations(&self) -> anyhow::Result<Vec<AssetBatchResponse>> {
-        let re = Regex::new(r"\d+").unwrap();
-
-        let mut asset_ids: Vec<u64> = self
+    pub async fn workspace_assets(&self) -> anyhow::Result<Vec<AssetBatchResponse>> {
+        let asset_ids: HashSet<u64> = self
             .dom
             .descendants()
-            .filter(|instance| instance.class == "Animation")
-            .filter_map(
-                |instance| match instance.properties.get(&Ustr::from("AnimationId")) {
-                    Some(Variant::ContentId(content_id)) => re
-                        .find(content_id.as_str())
-                        .and_then(|mat| mat.as_str().parse::<u64>().ok()),
-                    _ => None,
-                },
-            )
+            .flat_map(|instance| instance.properties.values())
+            .filter_map(content_url)
+            .filter_map(asset_id_from_content)
             .collect();
 
+        let mut asset_ids: Vec<u64> = asset_ids.into_iter().collect();
         asset_ids.sort();
         self.fetch_animation_assets(asset_ids).await
     }
@@ -105,5 +131,26 @@ impl StudioParserBuilder {
             api_key: self.api_key,
             dom,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::asset_id_from_content;
+
+    #[test]
+    fn parses_asset_ids_from_content_urls() {
+        assert_eq!(asset_id_from_content("rbxassetid://12345"), Some(12345));
+        assert_eq!(
+            asset_id_from_content("http://www.roblox.com/asset/?id=12345"),
+            Some(12345)
+        );
+        assert_eq!(
+            asset_id_from_content("https://www.roblox.com/asset?id=12345"),
+            Some(12345)
+        );
+        assert_eq!(asset_id_from_content("12345"), Some(12345));
+        assert_eq!(asset_id_from_content("rbxasset://textures/face.png"), None);
+        assert_eq!(asset_id_from_content(""), None);
     }
 }

@@ -84,7 +84,21 @@ The tool requires minimal setup:
 - ✅ Writing animations back to script source 
 - ✅ Flags and user configuration for easy use
 - ✅ Replace the animation instances in-game (Only replaces scripts for now)  
+- ✅ Reupload every supported asset type, not just animations (see below)
 - ❌ Rename the Animations as the same as the ones it replaces (Requires extra API calls for scripts)
+
+## 🧩 Supported Assets
+Every asset id in the game file (any `AnimationId`, `SoundId`, `Texture`, `Image`, Sky, SurfaceAppearance, ... property) and in scripts is scanned. These types get reuploaded:
+
+| Type | Notes |
+| --- | --- |
+| Animation | |
+| Audio | Roblox limits how many audios you can upload per month |
+| Image / Decal | Images are uploaded as a Decal, then the new image id is used |
+| Model | `.rbxm` models, used by `InsertService:LoadAsset` |
+| Video | Only if Roblox serves it as `.mp4`/`.mov`; Roblox has extra requirements for video uploads |
+
+Meshes, packages and accessories can't be uploaded through Open Cloud, so they are skipped and keep their old id.
 
 ## 🚨 Important Notes
 

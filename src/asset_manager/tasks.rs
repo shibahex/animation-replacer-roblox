@@ -132,6 +132,12 @@ impl UploadContext {
                         attempt, MAX_UPLOAD_RETRIES, asset_type, request_id, e
                     );
 
+                    // Retrying won't change the file format, so give up right away
+                    if matches!(e, RoboatError::UnsupportedAsset(_)) {
+                        error!("Failed to upload {:?} {}: {}", asset_type, request_id, e);
+                        return Err(e);
+                    }
+
                     if matches!(
                         e,
                         RoboatError::TooManyRequests | RoboatError::InternalServerError
