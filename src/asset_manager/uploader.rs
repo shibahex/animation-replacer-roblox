@@ -134,8 +134,6 @@ impl AssetUploader {
             );
         }
 
-        let total_assets = assets.len();
-
         // Assets are uploaded under the group if one is given, otherwise under the cookie's user.
         let creator = match group_id {
             Some(group_id) => AssetCreator::Group(group_id),
@@ -147,10 +145,22 @@ impl AssetUploader {
             }
         };
 
-        let ctx = UploadContext::new(self, creator, max_concurrent_tasks, total_assets);
+        // Models go last, so the assets inside them that are also used in the place are
+        // already uploaded and don't get uploaded twice.
+        let (models, assets): (Vec<_>, Vec<_>) = assets
+            .into_iter()
+            .partition(|asset| asset.asset_type == Some(AssetType::Model));
+
+        let ctx = UploadContext::new(self, creator, max_concurrent_tasks, assets.len());
 
         let tasks = ctx.spawn_upload_tasks(assets);
-        collect_upload_results(tasks).await
+        let mut asset_mapping = collect_upload_results(tasks).await?;
+
+        if !models.is_empty() {
+            ctx.reupload_models(models, &mut asset_mapping).await;
+        }
+
+        Ok(asset_mapping)
     }
 }
 

@@ -53,6 +53,13 @@ impl StudioParser {
     /// let assets = parser.workspace_assets().await?;
     /// ```
     pub async fn workspace_assets(&self) -> anyhow::Result<Vec<AssetBatchResponse>> {
+        let asset_ids = self.asset_ids_in_instances();
+        self.fetch_animation_assets(asset_ids).await
+    }
+
+    /// Returns every asset id referenced by an instance property in the file,
+    /// sorted and without duplicates.
+    pub fn asset_ids_in_instances(&self) -> Vec<u64> {
         let asset_ids: HashSet<u64> = self
             .dom
             .descendants()
@@ -63,7 +70,7 @@ impl StudioParser {
 
         let mut asset_ids: Vec<u64> = asset_ids.into_iter().collect();
         asset_ids.sort();
-        self.fetch_animation_assets(asset_ids).await
+        asset_ids
     }
 
     /// Creates a builder for fluent configuration with file path and authentication.

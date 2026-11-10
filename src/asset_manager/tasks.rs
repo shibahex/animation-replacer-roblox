@@ -47,12 +47,7 @@ impl UploadContext {
             .into_iter()
             .enumerate()
             .filter_map(|(index, asset)| {
-                let location = asset
-                    .locations
-                    .as_ref()
-                    .and_then(|locs| locs.first())
-                    .and_then(|loc| loc.location.as_ref())?
-                    .to_string();
+                let location = asset_location(&asset)?;
 
                 // Extract asset type from the asset response
                 let asset_type = asset.asset_type?;
@@ -101,7 +96,7 @@ impl UploadContext {
     }
 
     /// Uploads asset with automatic retry logic for rate limits and server errors
-    async fn upload_asset_with_retry(
+    pub(super) async fn upload_asset_with_retry(
         &self,
         asset_bytes: Bytes,
         asset_type: roboat::catalog::AssetType,
@@ -161,6 +156,15 @@ impl UploadContext {
 
         Err(last_error.unwrap())
     }
+}
+
+/// Gets the download url of an asset from its batch response.
+pub fn asset_location(asset: &AssetBatchResponse) -> Option<String> {
+    asset
+        .locations
+        .as_ref()
+        .and_then(|locs| locs.first())
+        .and_then(|loc| loc.location.clone())
 }
 
 /// Collects results from all upload tasks

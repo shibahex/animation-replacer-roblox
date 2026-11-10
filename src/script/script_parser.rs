@@ -3,7 +3,7 @@ use rbx_dom_weak::types::Variant;
 use regex::Regex;
 use roboat::assetdelivery::AssetBatchResponse;
 use std::collections::HashSet;
-use tracing::info;
+use tracing::{debug, info};
 use ustr::Ustr;
 
 impl StudioParser {
@@ -18,21 +18,29 @@ impl StudioParser {
         &mut self,
         unformatted_search: bool,
     ) -> anyhow::Result<Vec<AssetBatchResponse>> {
-        let script_refs = self.get_script_refs();
+        let id_list = self.asset_ids_in_scripts(unformatted_search);
+        info!("Got asset ids from scripts: {}", id_list.len());
+        self.fetch_animation_assets(id_list).await
+    }
 
+    /// Returns every asset id found in the source of all scripts, sorted and without duplicates.
+    ///
+    /// Without `unformatted_search` only ids written as `rbxassetid://ID` or
+    /// `roblox.com/asset/?id=ID` are found. With it, every number with 6+ digits is found.
+    pub fn asset_ids_in_scripts(&self, unformatted_search: bool) -> Vec<u64> {
         // This regex expression is FIND: "rbxassetid://" OR "roblox.com/asset?id=" THEN DIGITS
         let pattern = if unformatted_search {
             // Any large number (6+ digits)
             Regex::new(r"(\d{6,})").unwrap()
         } else {
             // Asset ID formats + fallback
-            Regex::new(r"(?:rbxassetid:\/\/|roblox\.com\/asset\/\?id=)(\d{6,})").unwrap()
+            Regex::new(r"(?:rbxassetid:\/\/|roblox\.com\/asset\/?\?id=)(\d{6,})").unwrap()
         };
 
         // Collect and deduplicate all IDs from all scripts
         let mut all_ids: HashSet<u64> = HashSet::new();
-        for script_ref in &script_refs {
-            if let Some(instance) = self.dom.get_by_ref(*script_ref)
+        for script_ref in self.get_script_refs() {
+            if let Some(instance) = self.dom.get_by_ref(script_ref)
                 && let Some(Variant::String(source)) =
                     instance.properties.get(&Ustr::from("Source"))
             {
@@ -52,12 +60,11 @@ impl StudioParser {
                 }
             }
         }
-        // Convert to Vec and fetch assets
+
         let mut id_list: Vec<u64> = all_ids.into_iter().collect();
         id_list.sort();
-        info!("{:?}", id_list);
-        info!("Got asset ids from scripts: {}", id_list.len());
-        self.fetch_animation_assets(id_list).await
+        debug!("Asset ids in scripts: {:?}", id_list);
+        id_list
     }
 
     /// Gets references to all script instances in the DOM.

@@ -6,6 +6,7 @@ use roboat::assetdelivery::AssetBatchResponse;
 pub type UploadTask =
     tokio::task::JoinHandle<Result<(Option<String>, String), (Option<String>, RoboatError)>>;
 pub mod info;
+pub mod models;
 pub mod ratelimiter;
 pub mod tasks;
 pub mod uploader;
