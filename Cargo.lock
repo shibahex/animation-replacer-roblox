@@ -1677,7 +1677,7 @@ dependencies = [
 [[package]]
 name = "roboat"
 version = "0.39.0"
-source = "git+https://github.com/shibahex/roboat-extras.git?branch=upload-animation-fix#f9e6cc84b070b361fabc6c25f67e10d0942ad237"
+source = "git+https://github.com/shibahex/roboat-extras.git?branch=upload-animation-fix#dfa3647197c784298b56ef358a59809e52ee6f12"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2061,7 +2061,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
