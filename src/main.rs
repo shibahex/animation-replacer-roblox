@@ -64,6 +64,7 @@ enum AssetKind {
     Image,
     Model,
     Video,
+    Mesh,
 }
 
 impl AssetKind {
@@ -74,6 +75,7 @@ impl AssetKind {
             AssetKind::Image => matches!(asset_type, AssetType::Image | AssetType::Decal),
             AssetKind::Model => asset_type == AssetType::Model,
             AssetKind::Video => asset_type == AssetType::Video,
+            AssetKind::Mesh => asset_type == AssetType::Mesh,
         }
     }
 }
@@ -217,7 +219,7 @@ async fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let asset_mapping = match uploader
+    let asset_mapping = match Arc::clone(&uploader)
         .reupload_all_assets(all_assets, args.group, args.threads)
         .await
     {
@@ -228,6 +230,7 @@ async fn main() -> ExitCode {
         }
     };
 
+    parser.adjust_special_mesh_offsets(&asset_mapping, &uploader.mesh_centers());
     parser.update_script_assets(&asset_mapping);
     parser.update_game_assets(&asset_mapping);
 

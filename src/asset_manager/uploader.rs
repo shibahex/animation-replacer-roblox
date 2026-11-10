@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 use super::is_retryable;
+use super::mesh::{read_mesh, write_glb};
 use super::ratelimiter::RateLimiter;
 use super::tasks::{UploadContext, collect_upload_results};
 use crate::studio::file_format::{read_dom, write_dom};
@@ -39,6 +40,9 @@ pub struct AssetUploader {
     pub(super) place_cache: Mutex<PlaceCache>,
     /// Readable names for the reuploaded assets, by their old asset id.
     pub(super) asset_names: Mutex<HashMap<u64, String>>,
+    /// The center of each reuploaded mesh (by old asset id). Roblox moves uploaded meshes so
+    /// their center is at 0, which SpecialMesh offsets have to make up for.
+    pub(super) mesh_centers: Mutex<HashMap<String, [f32; 3]>>,
 }
 
 /// Remembers places that can access private assets, so the same lookups aren't repeated.
@@ -69,6 +73,7 @@ pub fn is_reuploadable(asset_type: AssetType) -> bool {
             | AssetType::Decal
             | AssetType::Model
             | AssetType::Video
+            | AssetType::Mesh
     )
 }
 
@@ -94,6 +99,7 @@ impl AssetUploader {
             place_clients: Mutex::new(HashMap::new()),
             place_cache: Mutex::new(PlaceCache::default()),
             asset_names: Mutex::new(HashMap::new()),
+            mesh_centers: Mutex::new(HashMap::new()),
         }
     }
 
@@ -137,25 +143,30 @@ impl AssetUploader {
     ) -> Result<String, RoboatError> {
         let upload_type = match asset_type {
             AssetType::Image => AssetType::Decal,
+            // Meshes can only be uploaded as a 3D model, see `mesh_to_glb`
+            AssetType::Mesh => AssetType::Model,
             other => other,
-        };
-
-        // Open Cloud rejects xml animations and models with Bad Request, so old .rbxmx assets
-        // are converted to binary first
-        let converted;
-        let asset_data = if matches!(upload_type, AssetType::Animation | AssetType::Model)
-            && asset_data.starts_with(b"<roblox ")
-        {
-            converted = xml_to_binary(asset_data)?;
-            &converted
-        } else {
-            asset_data
         };
 
         let default_name = format!("reuploaded_{}", asset_type);
         let name = source_id
             .and_then(|id| self.asset_names.lock().unwrap().get(&id).cloned())
             .unwrap_or_else(|| default_name.clone());
+
+        let converted;
+        let asset_data = if asset_type == AssetType::Mesh {
+            converted = self.mesh_to_glb(asset_data, &name, source_id)?;
+            &converted
+        } else if matches!(upload_type, AssetType::Animation | AssetType::Model)
+            && asset_data.starts_with(b"<roblox ")
+        {
+            // Open Cloud rejects xml animations and models with Bad Request, so old .rbxmx
+            // assets are converted to binary first
+            converted = xml_to_binary(asset_data)?;
+            &converted
+        } else {
+            asset_data
+        };
         let description = match source_id {
             Some(id) => format!("Reuploaded from {} with animation-replacer-roblox", id),
             None => "Reuploaded with animation-replacer-roblox".to_string(),
@@ -258,6 +269,15 @@ impl AssetUploader {
         };
 
         debug!("Upload finished: {:?} {}", asset_type, new_asset_id);
+
+        if asset_type == AssetType::Mesh {
+            let model_id = new_asset_id
+                .parse::<u64>()
+                .map_err(|_| RoboatError::MalformedResponse)?;
+            return mesh_id_from_model(&self.client, model_id)
+                .await
+                .map(|mesh_id| mesh_id.to_string());
+        }
 
         if asset_type == AssetType::Image {
             let decal_id = new_asset_id
@@ -366,6 +386,68 @@ impl AssetUploader {
 
         Ok(asset_mapping)
     }
+}
+
+impl AssetUploader {
+    /// Converts a Roblox `.mesh` file to a `.glb`, and remembers its center for SpecialMesh offsets.
+    fn mesh_to_glb(
+        &self,
+        mesh_data: &Bytes,
+        name: &str,
+        source_id: Option<u64>,
+    ) -> Result<Bytes, RoboatError> {
+        let mesh = read_mesh(mesh_data)
+            .map_err(|e| RoboatError::UnsupportedAsset(format!("mesh: {}", e)))?;
+
+        if let Some(id) = source_id {
+            self.mesh_centers
+                .lock()
+                .unwrap()
+                .insert(id.to_string(), mesh.center());
+        }
+        Ok(Bytes::from(write_glb(&mesh, name)))
+    }
+
+    /// The center of every reuploaded mesh, by old asset id.
+    pub fn mesh_centers(&self) -> HashMap<String, [f32; 3]> {
+        self.mesh_centers.lock().unwrap().clone()
+    }
+}
+
+/// Finds the mesh id inside the model Roblox made from an uploaded `.glb`.
+///
+/// Retries for a while, because a model that was just uploaded isn't served right away.
+async fn mesh_id_from_model(client: &Client, model_id: u64) -> Result<u64, RoboatError> {
+    let mut last_error = RoboatError::MalformedResponse;
+
+    for attempt in 1..=DECAL_IMAGE_RETRIES {
+        match client.fetch_asset_data(model_id).await {
+            Ok(model_data) => {
+                let mesh_id = read_dom(&model_data).ok().and_then(|dom| {
+                    dom.descendants()
+                        .filter(|instance| instance.class == "MeshPart")
+                        .flat_map(|instance| instance.properties.iter())
+                        .filter(|(name, _)| name.as_str().starts_with("Mesh"))
+                        .find_map(|(_, value)| content_url(value).and_then(asset_id_from_content))
+                });
+                if let Some(mesh_id) = mesh_id {
+                    debug!("Model {} has mesh id {}", model_id, mesh_id);
+                    return Ok(mesh_id);
+                }
+                last_error = RoboatError::MalformedResponse;
+            }
+            Err(e) => last_error = e,
+        }
+
+        debug!(
+            "Model {} not ready yet (attempt {}/{}): {}",
+            model_id, attempt, DECAL_IMAGE_RETRIES, last_error
+        );
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    warn!("Couldn't find the mesh id in model {}", model_id);
+    Err(last_error)
 }
 
 /// Converts an xml model or animation (.rbxmx) to binary (.rbxm).

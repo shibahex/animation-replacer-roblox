@@ -201,6 +201,7 @@ impl UploadContext {
             }
         }
 
+        parser.adjust_special_mesh_offsets(asset_mapping, &self.uploader.mesh_centers());
         parser.update_script_assets(asset_mapping);
         parser.update_game_assets(asset_mapping);
 

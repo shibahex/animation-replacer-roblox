@@ -1,7 +1,7 @@
 use super::file_format::{is_xml_path, write_dom};
 use super::workplace_parser::{asset_id_from_content, asset_id_from_string, content_url};
 use crate::StudioParser;
-use rbx_types::{Content, Variant};
+use rbx_types::{Content, Variant, Vector3};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
@@ -29,6 +29,59 @@ impl StudioParser {
                 }
                 replace_asset_id(value, asset_mapping);
             }
+        }
+    }
+
+    /// Moves SpecialMeshes whose mesh got reuploaded, to make up for Roblox centering the
+    /// new mesh. Call this before [`Self::update_game_assets`], while the old ids are still set.
+    ///
+    /// `mesh_centers` holds the center of each reuploaded mesh by old asset id. Only meshes in
+    /// `asset_mapping` (that were reuploaded) are moved.
+    pub fn adjust_special_mesh_offsets(
+        &mut self,
+        asset_mapping: &HashMap<String, String>,
+        mesh_centers: &HashMap<String, [f32; 3]>,
+    ) {
+        let mesh_refs: Vec<_> = self
+            .dom
+            .descendants()
+            .filter(|instance| instance.class == "SpecialMesh")
+            .map(|instance| instance.referent())
+            .collect();
+
+        for mesh_ref in mesh_refs {
+            let Some(instance) = self.dom.get_by_ref_mut(mesh_ref) else {
+                continue;
+            };
+
+            let center = ["MeshContent", "MeshId"]
+                .iter()
+                .filter_map(|name| instance.properties.get(&ustr::ustr(name)))
+                .filter_map(|value| content_url(value).and_then(asset_id_from_content))
+                .map(|id| id.to_string())
+                .find(|id| asset_mapping.contains_key(id))
+                .and_then(|id| mesh_centers.get(&id).copied());
+
+            let Some(center) = center else {
+                continue;
+            };
+            if center.iter().all(|c| c.abs() < 1e-4) {
+                continue;
+            }
+
+            let vector = |name: &str, default: f32| match instance.properties.get(&ustr::ustr(name))
+            {
+                Some(Variant::Vector3(v)) => [v.x, v.y, v.z],
+                _ => [default; 3],
+            };
+            let offset = vector("Offset", 0.0);
+            let scale = vector("Scale", 1.0);
+            let new_offset = [0, 1, 2].map(|axis| offset[axis] + center[axis] * scale[axis]);
+
+            instance.properties.insert(
+                ustr::ustr("Offset"),
+                Variant::Vector3(Vector3::new(new_offset[0], new_offset[1], new_offset[2])),
+            );
         }
     }
 
@@ -131,6 +184,39 @@ mod tests {
     use super::replace_asset_id;
     use rbx_types::{Attributes, Variant};
     use std::collections::HashMap;
+
+    #[test]
+    fn moves_special_meshes_by_their_mesh_center() {
+        use crate::StudioParser;
+        use rbx_dom_weak::{InstanceBuilder, WeakDom};
+        use rbx_types::Vector3;
+
+        let dom = WeakDom::new(
+            InstanceBuilder::new("DataModel").with_child(
+                InstanceBuilder::new("SpecialMesh")
+                    .with_property("MeshId", Variant::ContentId("rbxassetid://111".into()))
+                    .with_property("Scale", Vector3::new(2.0, 2.0, 2.0)),
+            ),
+        );
+        let mut parser = StudioParser {
+            roblosecurity: None,
+            api_key: None,
+            dom,
+        };
+
+        let mapping = HashMap::from([("111".to_string(), "222".to_string())]);
+        let centers = HashMap::from([("111".to_string(), [0.0, 0.5, 0.0])]);
+        parser.adjust_special_mesh_offsets(&mapping, &centers);
+
+        let mesh = parser
+            .dom
+            .get_by_ref(parser.dom.root().children()[0])
+            .unwrap();
+        assert_eq!(
+            mesh.properties.get(&ustr::ustr("Offset")),
+            Some(&Variant::Vector3(Vector3::new(0.0, 1.0, 0.0)))
+        );
+    }
 
     #[test]
     fn replaces_ids_in_strings_and_attributes() {
