@@ -295,7 +295,7 @@ impl AssetUploader {
         ))
     }
 
-    /// Gets a creator's public games, most visited first. Cached, so each creator is only
+    /// Gets a creator's games, most visited first. Cached, so each creator is only
     /// looked up once. Returns an empty list if they have none or the lookup fails.
     async fn creator_places(&self, creator: AssetCreator) -> Vec<u64> {
         if let Some(places) = self
@@ -308,18 +308,16 @@ impl AssetUploader {
             return places.clone();
         }
 
+        // Every game counts, not just public ones: a group's private or unlisted games can
+        // still access the group's assets. Roblox only lists a user's public games.
         let games = match creator {
             AssetCreator::User(id) => {
-                self.retry_api("user games", || {
-                    self.client.user_games(id, Some(true), None)
-                })
-                .await
+                self.retry_api("user games", || self.client.user_games(id, None, None))
+                    .await
             }
             AssetCreator::Group(id) => {
-                self.retry_api("group games", || {
-                    self.client.group_games(id, Some(true), None)
-                })
-                .await
+                self.retry_api("group games", || self.client.group_games(id, None, None))
+                    .await
             }
         };
 
