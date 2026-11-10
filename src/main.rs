@@ -1,6 +1,7 @@
 use animation_replace_roblox::StudioParser;
 use animation_replace_roblox::asset_manager::uploader::{AssetUploader, is_reuploadable};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use roboat::catalog::AssetType;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -43,6 +44,37 @@ struct Args {
     /// Only find the assets and show what would be reuploaded, without uploading or saving anything
     #[arg(long)]
     dry_run: bool,
+
+    /// Only reupload these asset types, comma separated (like --only animation,audio). Others keep their id
+    #[arg(long, value_enum, value_delimiter = ',')]
+    only: Vec<AssetKind>,
+
+    /// Only reupload these asset ids, comma separated (like --ids 123,456). Others keep their id
+    #[arg(long, value_delimiter = ',')]
+    ids: Vec<u64>,
+}
+
+/// The asset types that can be picked with --only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum AssetKind {
+    Animation,
+    Audio,
+    /// Images and decals
+    Image,
+    Model,
+    Video,
+}
+
+impl AssetKind {
+    fn matches(self, asset_type: AssetType) -> bool {
+        match self {
+            AssetKind::Animation => asset_type == AssetType::Animation,
+            AssetKind::Audio => asset_type == AssetType::Audio,
+            AssetKind::Image => matches!(asset_type, AssetType::Image | AssetType::Decal),
+            AssetKind::Model => asset_type == AssetType::Model,
+            AssetKind::Video => asset_type == AssetType::Video,
+        }
+    }
 }
 
 fn cleanup_old_logs(log_dir: &str, prefix: &str, keep: usize) {
@@ -129,16 +161,34 @@ async fn main() -> ExitCode {
     asset_ids.dedup();
     info!("Found {} asset ids in the game file", asset_ids.len());
 
+    if !args.ids.is_empty() {
+        asset_ids.retain(|id| args.ids.contains(id));
+        info!(
+            "Only reuploading the {} ids given with --ids",
+            asset_ids.len()
+        );
+    }
+
     // One uploader for the whole run, so caches and connections are shared
     let uploader = Arc::new(AssetUploader::new(args.cookie, args.api_key));
+    uploader.add_asset_names(parser.asset_names());
 
-    let all_assets = match uploader.fetch_animation_assets(asset_ids).await {
+    let mut all_assets = match uploader.fetch_animation_assets(asset_ids).await {
         Ok(assets) => assets,
         Err(e) => {
             error!("Failed to fetch the assets: {:?}", e);
             return ExitCode::FAILURE;
         }
     };
+
+    if !args.only.is_empty() {
+        all_assets.retain(|asset| {
+            asset
+                .asset_type
+                .is_some_and(|asset_type| args.only.iter().any(|kind| kind.matches(asset_type)))
+        });
+        info!("Only reuploading {:?}", args.only);
+    }
 
     let mut type_counts: BTreeMap<String, usize> = BTreeMap::new();
     for asset in &all_assets {

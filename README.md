@@ -76,6 +76,8 @@ The tool requires minimal setup:
 - **Output (RECOMMENDED)**: Use the --output {NAME} flag to avoid data loss
 - **Threads (Optional)**: the --threads {NUM} flag is how many concurrent tasks need to run (default is 5)
 - **Scan additional IDs in scripts (Optional)** Use the --unformatted-ids flag to scan every big number in scripts
+- **Only some asset types (Optional)**: Use --only {TYPES} to only reupload some types, comma separated: `animation`, `audio`, `image` (images and decals), `model`, `video`. Like `--only animation,audio`
+- **Only some assets (Optional)**: Use --ids {IDS} to only reupload certain asset ids, comma separated. Like `--ids 123456,789012`
 - **Dry run (Optional)**: Use the --dry-run flag to only list the assets that would be reuploaded (like how many audios), without uploading or saving anything
 
 ## 📝 Development Status
@@ -87,7 +89,7 @@ The tool requires minimal setup:
 - ✅ Flags and user configuration for easy use
 - ✅ Replace the animation instances in-game (Only replaces scripts for now)  
 - ✅ Reupload every supported asset type, not just animations (see below)
-- ❌ Rename the Animations as the same as the ones it replaces (Requires extra API calls for scripts)
+- ✅ Name the reuploaded assets after the instances that use them (assets only used in scripts get a default name)
 
 ## 🧩 Supported Assets
 Every asset id in the game file (any `AnimationId`, `SoundId`, `Texture`, `Image`, Sky, SurfaceAppearance, ... property, `StringValue`s and attributes) and in scripts is scanned. These types get reuploaded:
