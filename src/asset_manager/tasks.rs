@@ -113,7 +113,7 @@ impl UploadContext {
 
             match self
                 .uploader
-                .start_upload(&asset_bytes, self.creator, asset_type)
+                .start_upload(&asset_bytes, self.creator, asset_type, name.parse().ok())
                 .await
             {
                 Ok(path) => break path,

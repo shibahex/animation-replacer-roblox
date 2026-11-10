@@ -37,6 +37,8 @@ pub struct AssetUploader {
     pub(super) place_clients: Mutex<HashMap<u64, Arc<Client>>>,
     /// Remembers which places can access private assets, shared by every metadata fetch.
     pub(super) place_cache: Mutex<PlaceCache>,
+    /// Readable names for the reuploaded assets, by their old asset id.
+    pub(super) asset_names: Mutex<HashMap<u64, String>>,
 }
 
 /// Remembers places that can access private assets, so the same lookups aren't repeated.
@@ -91,6 +93,16 @@ impl AssetUploader {
             http,
             place_clients: Mutex::new(HashMap::new()),
             place_cache: Mutex::new(PlaceCache::default()),
+            asset_names: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Adds readable names (by old asset id) to use for the reuploaded assets.
+    /// Names that are already known are kept.
+    pub fn add_asset_names(&self, names: HashMap<u64, String>) {
+        let mut asset_names = self.asset_names.lock().unwrap();
+        for (id, name) in names {
+            asset_names.entry(id).or_insert(name);
         }
     }
 
@@ -104,11 +116,16 @@ impl AssetUploader {
         creator: AssetCreator,
         asset_type: AssetType,
     ) -> Result<String, RoboatError> {
-        let operation_path = self.start_upload(&asset_data, creator, asset_type).await?;
+        let operation_path = self
+            .start_upload(&asset_data, creator, asset_type, None)
+            .await?;
         self.finish_upload(operation_path, asset_type).await
     }
 
     /// Starts an upload and returns the operation path to wait on with [`Self::finish_upload`].
+    ///
+    /// `source_id` is the old asset id. It's used to name the new asset after the instance
+    /// that uses it (see [`Self::add_asset_names`]), and is saved in the description.
     ///
     /// This is the only step that is safe to retry, since a failed start doesn't create an asset.
     pub async fn start_upload(
@@ -116,6 +133,7 @@ impl AssetUploader {
         asset_data: &Bytes,
         creator: AssetCreator,
         asset_type: AssetType,
+        source_id: Option<u64>,
     ) -> Result<String, RoboatError> {
         let upload_type = match asset_type {
             AssetType::Image => AssetType::Decal,
@@ -134,18 +152,44 @@ impl AssetUploader {
             asset_data
         };
 
-        let operation = self
+        let default_name = format!("reuploaded_{}", asset_type);
+        let name = source_id
+            .and_then(|id| self.asset_names.lock().unwrap().get(&id).cloned())
+            .unwrap_or_else(|| default_name.clone());
+        let description = match source_id {
+            Some(id) => format!("Reuploaded from {} with animation-replacer-roblox", id),
+            None => "Reuploaded with animation-replacer-roblox".to_string(),
+        };
+
+        let result = self
             .client
             .upload_asset(
                 creator,
-                format!("reuploaded_{}", asset_type),
-                "Reuploaded with animation-replacer-roblox".to_string(),
+                name.clone(),
+                description.clone(),
                 upload_type,
                 asset_data,
             )
-            .await?;
+            .await;
 
-        Ok(operation.path)
+        // A name taken from the game can be rejected (for example by moderation),
+        // so try once more with the default name
+        let result = match result {
+            Err(RoboatError::BadRequest | RoboatError::UnknownRobloxErrorCode { .. })
+                if name != default_name =>
+            {
+                debug!(
+                    "Upload named {:?} was rejected, retrying with the default name",
+                    name
+                );
+                self.client
+                    .upload_asset(creator, default_name, description, upload_type, asset_data)
+                    .await
+            }
+            other => other,
+        };
+
+        Ok(result?.path)
     }
 
     /// Waits for an upload to finish and returns the new asset id. For images, returns

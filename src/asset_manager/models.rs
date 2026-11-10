@@ -122,6 +122,22 @@ impl UploadContext {
             dom,
         };
 
+        // Name the assets inside after their instances in the model, and the model itself
+        // after its top instance if the place didn't give it a name
+        let mut names = parser.asset_names();
+        if let (Ok(id), Some(top)) = (
+            model_id.parse::<u64>(),
+            parser
+                .dom
+                .root()
+                .children()
+                .first()
+                .and_then(|r| parser.dom.get_by_ref(*r)),
+        ) {
+            names.insert(id, top.name.clone());
+        }
+        self.uploader.add_asset_names(names);
+
         // Every asset id in the model, that hasn't been uploaded yet
         let mut inner_ids = parser.asset_ids_in_instances();
         inner_ids.extend(parser.asset_ids_in_scripts(false));

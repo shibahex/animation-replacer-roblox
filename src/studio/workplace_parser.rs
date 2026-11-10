@@ -3,7 +3,7 @@ use crate::StudioParser;
 use rbx_types::{ContentType, Variant};
 use regex::Regex;
 use roboat::assetdelivery::AssetBatchResponse;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -75,7 +75,98 @@ pub fn asset_ids_in_property(name: &str, value: &Variant) -> Vec<u64> {
     }
 }
 
+/// Roblox allows up to 50 characters in an asset name.
+const MAX_ASSET_NAME_LENGTH: usize = 50;
+
+/// Names Roblox gives by default that don't describe the asset. An accessory's part is always
+/// called "Handle" and a SpecialMesh is called "Mesh", so the parent's name says more.
+const DEFAULT_NAMES: &[&str] = &["Handle", "Mesh", "Part", "MeshPart"];
+
+/// Returns true for names that don't say anything, like an Animation named "Animation".
+fn is_default_name(name: &str, class: &str) -> bool {
+    let name = name.trim();
+    name.is_empty()
+        || name.eq_ignore_ascii_case(class)
+        || DEFAULT_NAMES
+            .iter()
+            .any(|default| name.eq_ignore_ascii_case(default))
+}
+
+/// Makes a name safe to upload: no control characters, and short enough for Roblox.
+fn clean_asset_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_ASSET_NAME_LENGTH)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 impl StudioParser {
+    /// Picks a readable name for every asset id used by an instance, based on where it's used.
+    ///
+    /// In order of preference:
+    /// 1. The instance's own name, or the attribute's name (`Run` for an Animation named Run)
+    /// 2. The parent's name, when the instance has a default name (`Punch` for `Punch/Animation`)
+    /// 3. The instance and property name (`Sky SkyboxBk`)
+    ///
+    /// Assets that are only used in scripts don't get a name.
+    pub fn asset_names(&self) -> HashMap<u64, String> {
+        // asset id -> (preference, name), lower preference wins
+        let mut names: HashMap<u64, (u8, String)> = HashMap::new();
+        let mut add = |id: u64, preference: u8, name: String| {
+            let name = clean_asset_name(&name);
+            if name.is_empty() {
+                return;
+            }
+            let entry = names.entry(id).or_insert((u8::MAX, String::new()));
+            if preference < entry.0 {
+                *entry = (preference, name);
+            }
+        };
+
+        for instance in self.dom.descendants() {
+            for (property, value) in &instance.properties {
+                if let Variant::Attributes(attributes) = value {
+                    for (key, attribute) in attributes.iter() {
+                        for id in asset_ids_in_property(key, attribute) {
+                            add(id, 0, key.clone());
+                        }
+                    }
+                    continue;
+                }
+
+                for id in asset_ids_in_property(property.as_str(), value) {
+                    let (preference, name) = self.readable_name(instance, property.as_str());
+                    add(id, preference, name);
+                }
+            }
+        }
+
+        names
+            .into_iter()
+            .map(|(id, (_, name))| (id, name))
+            .collect()
+    }
+
+    /// A readable name for an asset used by `instance`'s `property`, with its preference.
+    fn readable_name(&self, instance: &rbx_dom_weak::Instance, property: &str) -> (u8, String) {
+        if !is_default_name(&instance.name, &instance.class) {
+            return (0, instance.name.clone());
+        }
+
+        // Services (direct children of the root) aren't useful names, like "Lighting"
+        if let Some(parent) = self.dom.get_by_ref(instance.parent())
+            && parent.parent() != self.dom.root_ref()
+            && parent.referent() != self.dom.root_ref()
+            && !is_default_name(&parent.name, &parent.class)
+        {
+            return (1, parent.name.clone());
+        }
+
+        (2, format!("{} {}", instance.name, property))
+    }
+
     /// Finds every asset referenced by an instance property in the file (AnimationId,
     /// SoundId, Texture, Image, MeshId, StringValues, attributes, ...) and returns their metadata.
     ///
@@ -211,6 +302,62 @@ mod tests {
         assert_eq!(asset_id_from_string("507771019"), Some(507771019));
         assert_eq!(asset_id_from_string("5"), None);
         assert_eq!(asset_id_from_string("hello 507771019"), None);
+    }
+
+    #[test]
+    fn picks_readable_asset_names() {
+        use crate::StudioParser;
+        use rbx_dom_weak::{InstanceBuilder, WeakDom};
+        use rbx_types::{Attributes, Variant};
+
+        let anim = |name: &str, id: &str| {
+            InstanceBuilder::new("Animation")
+                .with_name(name)
+                .with_property("AnimationId", Variant::ContentId(id.into()))
+        };
+        let dom = WeakDom::new(
+            InstanceBuilder::new("DataModel").with_child(
+                InstanceBuilder::new("Workspace")
+                    .with_child(anim("Run", "rbxassetid://111111"))
+                    .with_child(
+                        InstanceBuilder::new("Folder")
+                            .with_name("Punch")
+                            .with_child(anim("Animation", "rbxassetid://222222")),
+                    )
+                    .with_child(InstanceBuilder::new("Folder").with_property(
+                        "Attributes",
+                        Variant::Attributes(Attributes::new().with("WalkAnim", "333333")),
+                    ))
+                    .with_child(
+                        InstanceBuilder::new("Accessory")
+                            .with_name("CoolHat")
+                            .with_child(
+                                InstanceBuilder::new("MeshPart")
+                                    .with_name("Handle")
+                                    .with_property(
+                                        "TextureID",
+                                        Variant::ContentId("rbxassetid://555555".into()),
+                                    ),
+                            ),
+                    )
+                    .with_child(InstanceBuilder::new("Sky").with_property(
+                        "SkyboxBk",
+                        Variant::ContentId("rbxassetid://444444".into()),
+                    )),
+            ),
+        );
+        let parser = StudioParser {
+            roblosecurity: None,
+            api_key: None,
+            dom,
+        };
+
+        let names = parser.asset_names();
+        assert_eq!(names[&111111], "Run");
+        assert_eq!(names[&222222], "Punch");
+        assert_eq!(names[&333333], "WalkAnim");
+        assert_eq!(names[&444444], "Sky SkyboxBk");
+        assert_eq!(names[&555555], "CoolHat");
     }
 
     #[test]
