@@ -242,10 +242,8 @@ impl AssetUploader {
                 if let Some(name) = response.display_name
                     && name.contains('#')
                 {
-                    warn!(
-                        "Roblox filtered the name of {:?} {} to {:?}, the asset still works",
-                        asset_type, asset_id, name
-                    );
+                    self.rename_filtered_asset(&asset_id, asset_type, &name)
+                        .await;
                 }
                 break asset_id;
             }
@@ -271,6 +269,58 @@ impl AssetUploader {
         }
 
         Ok(new_asset_id)
+    }
+
+    /// Renames an asset whose name Roblox filtered (to `####`) back to the default name.
+    /// The asset works either way, so a failed rename is only logged.
+    async fn rename_filtered_asset(&self, asset_id: &str, asset_type: AssetType, name: &str) {
+        let default_name = format!("reuploaded_{}", asset_type);
+        let upload_type = match asset_type {
+            AssetType::Image => AssetType::Decal,
+            other => other,
+        };
+
+        let result = async {
+            let id = asset_id
+                .parse::<u64>()
+                .map_err(|_| RoboatError::MalformedResponse)?;
+            let update = self
+                .client
+                .update_asset_details(id, upload_type, Some(default_name.clone()), None)
+                .await?;
+
+            // Wait for the rename to finish, it's usually instant
+            for _ in 0..10 {
+                let operation = self
+                    .client
+                    .poll_upload_operation(update.path.clone())
+                    .await?;
+                if operation.done {
+                    return match operation.error {
+                        Some(error) => Err(RoboatError::UnknownRobloxErrorCode {
+                            code: error.code as u16,
+                            message: error.message,
+                        }),
+                        None => Ok(()),
+                    };
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            Err(RoboatError::InternalServerError)
+        }
+        .await;
+
+        match result {
+            Ok(()) => warn!(
+                "Roblox filtered the name of {:?} {} to {:?}, renamed it to {:?}",
+                asset_type, asset_id, name, default_name
+            ),
+            Err(e) => warn!(
+                "Roblox filtered the name of {:?} {} to {:?} and renaming it failed: {} \
+                 (the asset still works)",
+                asset_type, asset_id, name, e
+            ),
+        }
     }
 
     /// Reuploads multiple assets concurrently.
