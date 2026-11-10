@@ -14,6 +14,7 @@ use tracing::{debug, warn};
 use super::is_retryable;
 use super::ratelimiter::RateLimiter;
 use super::tasks::{UploadContext, collect_upload_results};
+use crate::studio::file_format::{read_dom, write_dom};
 use crate::studio::workplace_parser::{asset_id_from_content, content_url};
 pub const DEFAULT_CONCURRENT_TASKS: u64 = 5;
 
@@ -119,6 +120,18 @@ impl AssetUploader {
         let upload_type = match asset_type {
             AssetType::Image => AssetType::Decal,
             other => other,
+        };
+
+        // Open Cloud rejects xml animations and models with Bad Request, so old .rbxmx assets
+        // are converted to binary first
+        let converted;
+        let asset_data = if matches!(upload_type, AssetType::Animation | AssetType::Model)
+            && asset_data.starts_with(b"<roblox ")
+        {
+            converted = xml_to_binary(asset_data)?;
+            &converted
+        } else {
+            asset_data
         };
 
         let operation = self
@@ -250,6 +263,19 @@ impl AssetUploader {
     }
 }
 
+/// Converts an xml model or animation (.rbxmx) to binary (.rbxm).
+fn xml_to_binary(asset_data: &Bytes) -> Result<Bytes, RoboatError> {
+    let dom = read_dom(asset_data)
+        .map_err(|e| RoboatError::UnsupportedAsset(format!("unreadable xml file: {}", e)))?;
+
+    let mut binary = Vec::new();
+    write_dom(&mut binary, &dom, false)
+        .map_err(|e| RoboatError::UnsupportedAsset(format!("couldn't convert xml file: {}", e)))?;
+
+    debug!("Converted an xml asset to binary");
+    Ok(Bytes::from(binary))
+}
+
 /// Finds the image id inside a decal, by downloading the decal and reading its `Texture`.
 ///
 /// Retries for a while, because a decal that was just uploaded isn't served right away.
@@ -303,6 +329,16 @@ fn texture_id_from_decal_data(decal_data: &[u8]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::texture_id_from_decal_data;
+
+    #[test]
+    fn converts_xml_animations_to_binary() {
+        let xml = bytes::Bytes::from_static(
+            br#"<roblox version="4"><Item class="KeyframeSequence" referent="RBX0"><Properties>
+            <string name="Name">Anim</string></Properties></Item></roblox>"#,
+        );
+        let binary = super::xml_to_binary(&xml).unwrap();
+        assert!(binary.starts_with(b"<roblox!"));
+    }
 
     #[test]
     fn reads_texture_id_from_xml_decal() {
