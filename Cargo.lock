@@ -1670,7 +1670,7 @@ dependencies = [
 [[package]]
 name = "roboat"
 version = "0.39.0"
-source = "git+https://github.com/shibahex/roboat-extras.git?branch=upload-animation-fix#fd7277313ed3161ca4ca5a3553ab5ba52f8ac38a"
+source = "git+https://github.com/shibahex/roboat-extras.git?branch=upload-animation-fix#f9e6cc84b070b361fabc6c25f67e10d0942ad237"
 dependencies = [
  "base64 0.22.1",
  "bytes",
