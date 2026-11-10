@@ -7,6 +7,8 @@ use roboat::catalog::AssetType;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use tracing::{error, info, warn};
 
 /// How deep to follow models inside models. Stops loops and huge chains of models.
@@ -28,6 +30,13 @@ impl UploadContext {
         let total_models = models.len();
         let mut visited: HashSet<String> = HashSet::new();
 
+        // Models count their own progress, separate from the other assets
+        let model_ctx = UploadContext {
+            total_assets: total_models,
+            completed: Arc::new(AtomicUsize::new(0)),
+            ..self.clone()
+        };
+
         for (index, model) in models.into_iter().enumerate() {
             let model_id = model.request_id.clone().unwrap_or_default();
             info!(
@@ -37,7 +46,7 @@ impl UploadContext {
                 total_models
             );
 
-            if let Err(e) = self
+            if let Err(e) = model_ctx
                 .reupload_model(model, asset_mapping, &mut visited, 0)
                 .await
             {
@@ -74,7 +83,7 @@ impl UploadContext {
                 .await;
 
             let new_model_id = self
-                .upload_asset_with_retry(model_data, AssetType::Model, 0, model_id.clone())
+                .upload_asset_with_retry(model_data, AssetType::Model, model_id.clone())
                 .await?;
 
             info!("Model {} reuploaded as {}", model_id, new_model_id);
@@ -156,6 +165,7 @@ impl UploadContext {
         // Upload the normal assets concurrently, the same way as the assets in the place
         let inner_ctx = UploadContext {
             total_assets: inner_assets.len(),
+            completed: Arc::new(AtomicUsize::new(0)),
             ..self.clone()
         };
         let tasks = inner_ctx.spawn_upload_tasks(inner_assets);

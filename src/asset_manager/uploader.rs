@@ -7,14 +7,18 @@ use roboat::RoboatError;
 use roboat::bedev2::AssetCreator;
 use roboat::catalog::AssetType;
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::{debug, info, warn};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant};
+use tracing::{debug, warn};
 
+use super::is_retryable;
 use super::ratelimiter::RateLimiter;
 use super::tasks::{UploadContext, collect_upload_results};
 use crate::studio::workplace_parser::{asset_id_from_content, content_url};
-const DEFAULT_CONCURRENT_TASKS: u64 = 50;
+pub const DEFAULT_CONCURRENT_TASKS: u64 = 5;
+
+/// How long to wait for Roblox to finish processing an upload.
+const MAX_UPLOAD_WAIT: Duration = Duration::from_secs(300);
 
 /// How many times to try reading a freshly uploaded decal to find its image id.
 /// New decals can take a few seconds before assetdelivery serves them.
@@ -24,6 +28,30 @@ pub struct AssetUploader {
     pub roblosecurity: String,
     pub api_key: String,
     pub(super) rate_limiter: Arc<RateLimiter>,
+    /// Shared roboat client with the cookie and api key, so connections are reused.
+    pub(super) client: Arc<Client>,
+    /// Plain http client for downloading files from the CDN.
+    pub(super) http: reqwest::Client,
+    /// Roboat clients that send a `Roblox-Place-Id` header, one per place.
+    pub(super) place_clients: Mutex<HashMap<u64, Arc<Client>>>,
+    /// Remembers which places can access private assets, shared by every metadata fetch.
+    pub(super) place_cache: Mutex<PlaceCache>,
+}
+
+/// Remembers places that can access private assets, so the same lookups aren't repeated.
+#[derive(Default)]
+pub struct PlaceCache {
+    /// Places that unlocked private assets before, the most recent first.
+    pub working_places: Vec<u64>,
+    /// A creator's public places, most visited first. Empty if they have none.
+    pub creator_places: HashMap<AssetCreator, Vec<u64>>,
+}
+
+/// The reqwest client settings used for every request, so a stuck request can't hang forever.
+pub(super) fn http_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(120))
 }
 
 /// Returns true if the asset type can be reuploaded through Open Cloud.
@@ -44,10 +72,24 @@ pub fn is_reuploadable(asset_type: AssetType) -> bool {
 impl AssetUploader {
     /// Creates a new AssetUploader with a roblosecurity cookie and api key.
     pub fn new(roblosecurity: String, api_key: String) -> Self {
+        let http = http_client_builder()
+            .build()
+            .expect("Failed to build the http client");
+
+        let client = ClientBuilder::new()
+            .roblosecurity(roblosecurity.clone())
+            .api_key(api_key.clone())
+            .reqwest_client(http.clone())
+            .build();
+
         Self {
             roblosecurity,
             api_key,
             rate_limiter: Arc::new(RateLimiter::new()),
+            client: Arc::new(client),
+            http,
+            place_clients: Mutex::new(HashMap::new()),
+            place_cache: Mutex::new(PlaceCache::default()),
         }
     }
 
@@ -61,52 +103,101 @@ impl AssetUploader {
         creator: AssetCreator,
         asset_type: AssetType,
     ) -> Result<String, RoboatError> {
-        let client = ClientBuilder::new()
-            .roblosecurity(self.roblosecurity.clone())
-            .api_key(self.api_key.clone())
-            .build();
+        let operation_path = self.start_upload(&asset_data, creator, asset_type).await?;
+        self.finish_upload(operation_path, asset_type).await
+    }
 
+    /// Starts an upload and returns the operation path to wait on with [`Self::finish_upload`].
+    ///
+    /// This is the only step that is safe to retry, since a failed start doesn't create an asset.
+    pub async fn start_upload(
+        &self,
+        asset_data: &Bytes,
+        creator: AssetCreator,
+        asset_type: AssetType,
+    ) -> Result<String, RoboatError> {
         let upload_type = match asset_type {
             AssetType::Image => AssetType::Decal,
             other => other,
         };
 
-        let resp = client
+        let operation = self
+            .client
             .upload_asset(
                 creator,
                 format!("reuploaded_{}", asset_type),
                 "Reuploaded with animation-replacer-roblox".to_string(),
                 upload_type,
-                &asset_data,
+                asset_data,
             )
             .await?;
 
+        Ok(operation.path)
+    }
+
+    /// Waits for an upload to finish and returns the new asset id. For images, returns
+    /// the image id inside the uploaded decal.
+    ///
+    /// Network errors and rate limits while waiting are retried here, so the asset is never
+    /// uploaded a second time just because checking on it failed.
+    pub async fn finish_upload(
+        &self,
+        operation_path: String,
+        asset_type: AssetType,
+    ) -> Result<String, RoboatError> {
+        let started = Instant::now();
+        let mut poll_delay = Duration::from_secs(1);
+
         let new_asset_id = loop {
-            let operation = client.poll_upload_operation(resp.path.clone()).await?;
-
-            if operation.done {
-                if let Some(asset_id) = operation.response.and_then(|resp| resp.asset_id) {
-                    break asset_id;
-                }
-
-                return Err(match operation.error {
-                    Some(error) => RoboatError::UnknownRobloxErrorCode {
-                        code: error.code as u16,
-                        message: error.message,
-                    },
-                    None => RoboatError::MalformedResponse,
-                });
+            if started.elapsed() > MAX_UPLOAD_WAIT {
+                warn!(
+                    "Gave up waiting for upload {} after {:?}",
+                    operation_path, MAX_UPLOAD_WAIT
+                );
+                return Err(RoboatError::InternalServerError);
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            tokio::time::sleep(poll_delay).await;
+            poll_delay = (poll_delay * 2).min(Duration::from_secs(5));
+            self.rate_limiter.wait_if_limited().await;
+
+            let operation = match self
+                .client
+                .poll_upload_operation(operation_path.clone())
+                .await
+            {
+                Ok(operation) => operation,
+                Err(e) if is_retryable(&e) => {
+                    debug!("Checking upload {} failed, retrying: {}", operation_path, e);
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+
+            if !operation.done {
+                continue;
+            }
+
+            if let Some(asset_id) = operation.response.and_then(|resp| resp.asset_id) {
+                break asset_id;
+            }
+
+            return Err(match operation.error {
+                Some(error) => RoboatError::UnknownRobloxErrorCode {
+                    code: error.code as u16,
+                    message: error.message,
+                },
+                None => RoboatError::MalformedResponse,
+            });
         };
 
-        info!("Uploaded complete! {:?} {}", asset_type, new_asset_id);
+        debug!("Upload finished: {:?} {}", asset_type, new_asset_id);
 
         if asset_type == AssetType::Image {
             let decal_id = new_asset_id
                 .parse::<u64>()
                 .map_err(|_| RoboatError::MalformedResponse)?;
-            return image_id_from_decal(&client, decal_id)
+            return image_id_from_decal(&self.client, decal_id)
                 .await
                 .map(|image_id| image_id.to_string());
         }
@@ -137,12 +228,7 @@ impl AssetUploader {
         // Assets are uploaded under the group if one is given, otherwise under the cookie's user.
         let creator = match group_id {
             Some(group_id) => AssetCreator::Group(group_id),
-            None => {
-                let client = ClientBuilder::new()
-                    .roblosecurity(self.roblosecurity.clone())
-                    .build();
-                AssetCreator::User(client.user_id().await?)
-            }
+            None => AssetCreator::User(self.client.user_id().await?),
         };
 
         // Models go last, so the assets inside them that are also used in the place are
@@ -205,9 +291,11 @@ fn texture_id_from_decal_data(decal_data: &[u8]) -> Option<u64> {
             .find_map(asset_id_from_content);
     }
 
+    static TEXTURE_PATTERN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?s)name="Texture"[^>]*>.*?<url>([^<]*)</url>"#).unwrap());
+
     let text = String::from_utf8_lossy(decal_data);
-    let texture_pattern = Regex::new(r#"(?s)name="Texture"[^>]*>.*?<url>([^<]*)</url>"#).unwrap();
-    texture_pattern
+    TEXTURE_PATTERN
         .captures(&text)
         .and_then(|cap| asset_id_from_content(&cap[1]))
 }

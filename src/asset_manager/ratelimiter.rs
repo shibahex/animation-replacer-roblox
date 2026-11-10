@@ -22,10 +22,15 @@ impl RateLimiter {
         }
     }
 
-    /// Sets a rate limit that all tasks must wait for
+    /// Sets a rate limit that all tasks must wait for. Never shortens a longer
+    /// rate limit that is already active.
     pub async fn set_rate_limit(&self, duration_secs: u64) {
         let wake_time = tokio::time::Instant::now() + Duration::from_secs(duration_secs);
-        *self.until.lock().await = Some(wake_time);
+        let mut until = self.until.lock().await;
+        if until.is_some_and(|current| current > wake_time) {
+            return;
+        }
+        *until = Some(wake_time);
         info!(
             "Global rate limit set: all tasks sleeping {} seconds",
             duration_secs
