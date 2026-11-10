@@ -75,6 +75,7 @@ The tool requires minimal setup:
 - **Output (RECOMMENDED)**: Use the --output {NAME} flag to avoid data loss
 - **Threads (Optional)**: the --threads {NUM} flag is how many concurrent tasks need to run (default is 5)
 - **Scan additional IDs in scripts (Optional)** Use the --unformatted-ids flag to scan every big number in scripts
+- **Dry run (Optional)**: Use the --dry-run flag to only list the assets that would be reuploaded (like how many audios), without uploading or saving anything
 
 ## 📝 Development Status
 - ✅ Scrape animations in lua scripts
@@ -88,14 +89,14 @@ The tool requires minimal setup:
 - ❌ Rename the Animations as the same as the ones it replaces (Requires extra API calls for scripts)
 
 ## 🧩 Supported Assets
-Every asset id in the game file (any `AnimationId`, `SoundId`, `Texture`, `Image`, Sky, SurfaceAppearance, ... property) and in scripts is scanned. These types get reuploaded:
+Every asset id in the game file (any `AnimationId`, `SoundId`, `Texture`, `Image`, Sky, SurfaceAppearance, ... property, `StringValue`s and attributes) and in scripts is scanned. These types get reuploaded:
 
 | Type | Notes |
 | --- | --- |
 | Animation | |
 | Audio | Roblox limits how many audios you can upload per month |
 | Image / Decal | Images are uploaded as a Decal, then the new image id is used |
-| Model | `.rbxm` models, used by `InsertService:LoadAsset` |
+| Model | `.rbxm` models, used by `InsertService:LoadAsset` or `require`. The assets inside the model are reuploaded first and replaced inside it |
 | Video | Only if Roblox serves it as `.mp4`/`.mov`; Roblox has extra requirements for video uploads |
 
 Meshes, packages and accessories can't be uploaded through Open Cloud, so they are skipped and keep their old id.
