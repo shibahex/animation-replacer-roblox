@@ -93,7 +93,7 @@ fn is_default_name(name: &str, class: &str) -> bool {
 }
 
 /// Makes a name safe to upload: no control characters, and short enough for Roblox.
-fn clean_asset_name(name: &str) -> String {
+pub fn clean_asset_name(name: &str) -> String {
     name.chars()
         .filter(|c| !c.is_control())
         .take(MAX_ASSET_NAME_LENGTH)

@@ -5,20 +5,27 @@ use roboat::{
     assetdelivery::{AssetBatchPayload, AssetBatchResponse},
     bedev2::AssetCreator,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
 
 use super::is_retryable;
+use super::uploader::is_reuploadable;
 use crate::AssetUploader;
+use crate::studio::workplace_parser::clean_asset_name;
+use roboat::catalog::AssetType;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 const BATCH_SIZE: usize = 250;
 /// How many times an API call is tried before giving up.
 const MAX_API_ATTEMPTS: u32 = 6;
 /// How many of a creator's games are tried when looking for one that can access their assets.
 const MAX_CANDIDATE_PLACES: usize = 10;
+/// How many original asset names are looked up at the same time with `fetch_missing_names`.
+const NAME_LOOKUP_CONCURRENCY: usize = 5;
 /// The batch API returns this when an asset is private and needs a `Roblox-Place-Id`
 /// of a game that is allowed to use it.
 const PRIVATE_ASSET_CODE: u16 = 403;
@@ -346,6 +353,69 @@ impl AssetUploader {
             .creator_places
             .insert(creator, places.clone());
         places
+    }
+}
+
+impl AssetUploader {
+    /// Looks up the original name on Roblox for assets that didn't get a name from the game
+    /// (usually assets that are only used in scripts). Costs one request per asset, so it's
+    /// optional. Returns how many names were found.
+    ///
+    /// Models are skipped, they're named after their top instance when they're reuploaded.
+    pub async fn fetch_missing_names(self: &Arc<Self>, assets: &[AssetBatchResponse]) -> usize {
+        let missing: Vec<u64> = {
+            let names = self.asset_names.lock().unwrap();
+            assets
+                .iter()
+                .filter(|asset| {
+                    asset
+                        .asset_type
+                        .is_some_and(|t| is_reuploadable(t) && t != AssetType::Model)
+                })
+                .filter_map(|asset| asset.request_id.as_ref()?.parse::<u64>().ok())
+                .filter(|id| !names.contains_key(id))
+                .collect()
+        };
+
+        if missing.is_empty() {
+            return 0;
+        }
+        info!("Looking up the original names of {} assets", missing.len());
+
+        let semaphore = Arc::new(Semaphore::new(NAME_LOOKUP_CONCURRENCY));
+        let mut lookups = JoinSet::new();
+
+        for asset_id in missing {
+            let uploader = Arc::clone(self);
+            let semaphore = Arc::clone(&semaphore);
+            lookups.spawn(async move {
+                let _permit = semaphore.acquire().await.ok()?;
+                let asset_info = uploader
+                    .retry_api("asset info", || uploader.client.get_asset_info(asset_id))
+                    .await;
+
+                match asset_info {
+                    Ok(info) => Some((asset_id, clean_asset_name(&info.display_name))),
+                    Err(e) => {
+                        debug!("Couldn't get the name of asset {}: {}", asset_id, e);
+                        None
+                    }
+                }
+            });
+        }
+
+        let mut found = HashMap::new();
+        while let Some(result) = lookups.join_next().await {
+            if let Ok(Some((asset_id, name))) = result
+                && !name.is_empty()
+            {
+                found.insert(asset_id, name);
+            }
+        }
+
+        let count = found.len();
+        self.add_asset_names(found);
+        count
     }
 }
 

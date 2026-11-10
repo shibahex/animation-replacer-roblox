@@ -77,6 +77,7 @@ The tool requires minimal setup:
 - **Threads (Optional)**: the --threads {NUM} flag is how many concurrent tasks need to run (default is 5)
 - **Scan additional IDs in scripts (Optional)** Use the --unformatted-ids flag to scan every big number in scripts
 - **Only some asset types (Optional)**: Use --only {TYPES} to only reupload some types, comma separated: `animation`, `audio`, `image` (images and decals), `model`, `video`. Like `--only animation,audio`
+- **Original names (Optional)**: Use the --fetch-names flag to look up the original name on Roblox for assets that don't get a name from the game (like assets only used in scripts). It costs one extra request per asset, about 2 minutes for 1200 assets
 - **Dry run (Optional)**: Use the --dry-run flag to only list the assets that would be reuploaded (like how many audios), without uploading or saving anything
 
 ## 📝 Development Status
@@ -88,7 +89,7 @@ The tool requires minimal setup:
 - ✅ Flags and user configuration for easy use
 - ✅ Replace the animation instances in-game (Only replaces scripts for now)  
 - ✅ Reupload every supported asset type, not just animations (see below)
-- ✅ Name the reuploaded assets after the instances that use them (assets only used in scripts get a default name)
+- ✅ Name the reuploaded assets after the instances that use them (assets only used in scripts get a default name, or their original name with --fetch-names)
 
 ## 🧩 Supported Assets
 Every asset id in the game file (any `AnimationId`, `SoundId`, `Texture`, `Image`, Sky, SurfaceAppearance, ... property, `StringValue`s and attributes) and in scripts is scanned. These types get reuploaded:

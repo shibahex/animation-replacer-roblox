@@ -48,6 +48,11 @@ struct Args {
     /// Only reupload these asset types, comma separated (like --only animation,audio). Others keep their id
     #[arg(long, value_enum, value_delimiter = ',')]
     only: Vec<AssetKind>,
+
+    /// Look up the original name on Roblox for assets that don't get a name from the game
+    /// (like assets only used in scripts). Costs one extra request per asset
+    #[arg(long)]
+    fetch_names: bool,
 }
 
 /// The asset types that can be picked with --only.
@@ -195,6 +200,16 @@ async fn main() -> ExitCode {
     );
     for (type_name, count) in &type_counts {
         info!("  {}: {}", type_name, count);
+    }
+
+    if args.fetch_names {
+        let lookup_started = Instant::now();
+        let found = uploader.fetch_missing_names(&all_assets).await;
+        info!(
+            "Found {} original names (in {:.1?})",
+            found,
+            lookup_started.elapsed()
+        );
     }
 
     if args.dry_run {
