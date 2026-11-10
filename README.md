@@ -77,7 +77,6 @@ The tool requires minimal setup:
 - **Threads (Optional)**: the --threads {NUM} flag is how many concurrent tasks need to run (default is 5)
 - **Scan additional IDs in scripts (Optional)** Use the --unformatted-ids flag to scan every big number in scripts
 - **Only some asset types (Optional)**: Use --only {TYPES} to only reupload some types, comma separated: `animation`, `audio`, `image` (images and decals), `model`, `video`. Like `--only animation,audio`
-- **Only some assets (Optional)**: Use --ids {IDS} to only reupload certain asset ids, comma separated. Like `--ids 123456,789012`
 - **Dry run (Optional)**: Use the --dry-run flag to only list the assets that would be reuploaded (like how many audios), without uploading or saving anything
 
 ## 📝 Development Status

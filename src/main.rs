@@ -48,10 +48,6 @@ struct Args {
     /// Only reupload these asset types, comma separated (like --only animation,audio). Others keep their id
     #[arg(long, value_enum, value_delimiter = ',')]
     only: Vec<AssetKind>,
-
-    /// Only reupload these asset ids, comma separated (like --ids 123,456). Others keep their id
-    #[arg(long, value_delimiter = ',')]
-    ids: Vec<u64>,
 }
 
 /// The asset types that can be picked with --only.
@@ -160,14 +156,6 @@ async fn main() -> ExitCode {
     asset_ids.sort();
     asset_ids.dedup();
     info!("Found {} asset ids in the game file", asset_ids.len());
-
-    if !args.ids.is_empty() {
-        asset_ids.retain(|id| args.ids.contains(id));
-        info!(
-            "Only reuploading the {} ids given with --ids",
-            asset_ids.len()
-        );
-    }
 
     // One uploader for the whole run, so caches and connections are shared
     let uploader = Arc::new(AssetUploader::new(args.cookie, args.api_key));
