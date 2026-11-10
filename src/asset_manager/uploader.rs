@@ -63,6 +63,7 @@ impl AssetUploader {
     ) -> Result<String, RoboatError> {
         let client = ClientBuilder::new()
             .roblosecurity(self.roblosecurity.clone())
+            .api_key(self.api_key.clone())
             .build();
 
         let upload_type = match asset_type {
@@ -72,7 +73,6 @@ impl AssetUploader {
 
         let resp = client
             .upload_asset(
-                self.api_key.clone(),
                 creator,
                 format!("reuploaded_{}", asset_type),
                 "Reuploaded with animation-replacer-roblox".to_string(),
@@ -82,9 +82,7 @@ impl AssetUploader {
             .await?;
 
         let new_asset_id = loop {
-            let operation = client
-                .poll_upload_operation(self.api_key.clone(), resp.path.clone())
-                .await?;
+            let operation = client.poll_upload_operation(resp.path.clone()).await?;
 
             if operation.done {
                 if let Some(asset_id) = operation.response.and_then(|resp| resp.asset_id) {
