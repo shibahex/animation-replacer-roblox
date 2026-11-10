@@ -4,6 +4,7 @@ use regex::Regex;
 use roboat::Client;
 use roboat::ClientBuilder;
 use roboat::RoboatError;
+use roboat::bedev2::AssetCreator;
 use roboat::catalog::AssetType;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -57,7 +58,7 @@ impl AssetUploader {
     pub async fn upload_asset(
         &self,
         asset_data: Bytes,
-        group_id: Option<u64>,
+        creator: AssetCreator,
         asset_type: AssetType,
     ) -> Result<String, RoboatError> {
         let client = ClientBuilder::new()
@@ -72,7 +73,7 @@ impl AssetUploader {
         let resp = client
             .upload_asset(
                 self.api_key.clone(),
-                group_id,
+                creator,
                 format!("reuploaded_{}", asset_type),
                 "Reuploaded with animation-replacer-roblox".to_string(),
                 upload_type,
@@ -137,7 +138,18 @@ impl AssetUploader {
 
         let total_assets = assets.len();
 
-        let ctx = UploadContext::new(self, group_id, max_concurrent_tasks, total_assets);
+        // Assets are uploaded under the group if one is given, otherwise under the cookie's user.
+        let creator = match group_id {
+            Some(group_id) => AssetCreator::Group(group_id),
+            None => {
+                let client = ClientBuilder::new()
+                    .roblosecurity(self.roblosecurity.clone())
+                    .build();
+                AssetCreator::User(client.user_id().await?)
+            }
+        };
+
+        let ctx = UploadContext::new(self, creator, max_concurrent_tasks, total_assets);
 
         let tasks = ctx.spawn_upload_tasks(assets);
         collect_upload_results(tasks).await

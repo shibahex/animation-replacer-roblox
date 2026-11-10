@@ -4,6 +4,7 @@ use crate::asset_manager::UploadTask;
 use bytes::Bytes;
 use roboat::RoboatError;
 use roboat::assetdelivery::AssetBatchResponse;
+use roboat::bedev2::AssetCreator;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -18,7 +19,7 @@ const MAX_UPLOAD_RETRIES: usize = 5;
 #[derive(Clone)]
 pub struct UploadContext {
     pub uploader: Arc<AssetUploader>,
-    pub group_id: Option<u64>,
+    pub creator: AssetCreator,
     pub semaphore: Arc<Semaphore>,
     pub rate_limiter: Arc<RateLimiter>,
     pub total_assets: usize,
@@ -27,14 +28,14 @@ pub struct UploadContext {
 impl UploadContext {
     pub fn new(
         uploader: Arc<AssetUploader>,
-        group_id: Option<u64>,
+        creator: AssetCreator,
         max_concurrent_tasks: u64,
         total_assets: usize,
     ) -> Self {
         Self {
             rate_limiter: Arc::clone(&uploader.rate_limiter),
             uploader,
-            group_id,
+            creator,
             semaphore: Arc::new(Semaphore::new(max_concurrent_tasks as usize)),
             total_assets,
         }
@@ -112,7 +113,7 @@ impl UploadContext {
         for attempt in 1..=MAX_UPLOAD_RETRIES {
             match self
                 .uploader
-                .upload_asset(asset_bytes.clone(), self.group_id, asset_type)
+                .upload_asset(asset_bytes.clone(), self.creator, asset_type)
                 .await
             {
                 Ok(new_asset_id) => {
