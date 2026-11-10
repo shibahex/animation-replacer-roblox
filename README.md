@@ -38,6 +38,7 @@ This is required to authenticate your account for uploading animations.
 To create a `API Key` go to https://create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab and create an `API Key` with permissions for `assets` and add both read and write.
 
 You will also need to open Roblox Studio and save the game as a file for the Animation Replacer.
+Binary (`.rbxl`, `.rbxm`) and xml (`.rbxlx`, `.rbxmx`) files both work, so Rojo projects can be used too. The output is saved as xml if its name ends in `.rbxlx` or `.rbxmx`.
 > [!NOTE]
 > Recommended to use the ``--output`` flag to avoid data loss if the game corrupts. 
 
@@ -75,6 +76,9 @@ The tool requires minimal setup:
 - **Output (RECOMMENDED)**: Use the --output {NAME} flag to avoid data loss
 - **Threads (Optional)**: the --threads {NUM} flag is how many concurrent tasks need to run (default is 5)
 - **Scan additional IDs in scripts (Optional)** Use the --unformatted-ids flag to scan every big number in scripts
+- **Only some asset types (Optional)**: Use --only {TYPES} to only reupload some types, comma separated: `animation`, `audio`, `image` (images and decals), `model`, `video`, `mesh`. Like `--only animation,audio`
+- **Original names (Optional)**: Use the --fetch-names flag to look up the original name on Roblox for assets that don't get a name from the game (like assets only used in scripts). It costs one extra request per asset, about 2 minutes for 1200 assets
+- **Dry run (Optional)**: Use the --dry-run flag to only list the assets that would be reuploaded (like how many audios), without uploading or saving anything
 
 ## 📝 Development Status
 - ✅ Scrape animations in lua scripts
@@ -84,7 +88,22 @@ The tool requires minimal setup:
 - ✅ Writing animations back to script source 
 - ✅ Flags and user configuration for easy use
 - ✅ Replace the animation instances in-game (Only replaces scripts for now)  
-- ❌ Rename the Animations as the same as the ones it replaces (Requires extra API calls for scripts)
+- ✅ Reupload every supported asset type, not just animations (see below)
+- ✅ Name the reuploaded assets after the instances that use them (assets only used in scripts get a default name, or their original name with --fetch-names)
+
+## 🧩 Supported Assets
+Every asset id in the game file (any `AnimationId`, `SoundId`, `Texture`, `Image`, Sky, SurfaceAppearance, ... property, `StringValue`s and attributes) and in scripts is scanned. These types get reuploaded:
+
+| Type | Notes |
+| --- | --- |
+| Animation | |
+| Audio | Roblox limits how many audios you can upload per month |
+| Image / Decal | Images are uploaded as a Decal, then the new image id is used |
+| Model | `.rbxm` models, used by `InsertService:LoadAsset` or `require`. The assets inside the model are reuploaded first and replaced inside it |
+| Video | Only if Roblox serves it as `.mp4`/`.mov`; Roblox has extra requirements for video uploads |
+| Mesh | Converted to `.glb` and uploaded as a model, keeping bones (skinned meshes). Mesh versions 1.00 to 5.00 |
+
+Packages and accessories can't be uploaded through Open Cloud, so they are skipped and keep their old id. Each reuploaded mesh also leaves a model in your inventory, since Open Cloud can only create meshes by uploading a 3D model.
 
 ## 🚨 Important Notes
 

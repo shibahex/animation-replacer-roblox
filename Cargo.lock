@@ -51,6 +51,7 @@ dependencies = [
  "rbx_binary",
  "rbx_dom_weak",
  "rbx_types",
+ "rbx_xml",
  "regex",
  "reqwest",
  "roboat",
@@ -1053,22 +1054,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
-name = "lz4"
-version = "1.28.1"
+name = "lz4_flex"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a20b523e860d03443e98350ceaac5e71c6ba89aea7d960769ec3ce37f4de5af4"
+checksum = "7ef0d4ed8669f8f8826eb00dc878084aa8f253506c4fd5e8f58f5bce72ddb97e"
 dependencies = [
- "lz4-sys",
-]
-
-[[package]]
-name = "lz4-sys"
-version = "1.11.1+lz4-1.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bd8c0d6c6ed0cd30b3652886bb8711dc4bb01d637a68105a3d5158039b418e6"
-dependencies = [
- "cc",
- "libc",
+ "twox-hash",
 ]
 
 [[package]]
@@ -1453,13 +1444,13 @@ dependencies = [
 
 [[package]]
 name = "rbx_binary"
-version = "1.0.0"
+version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9573fee5e073d7b303f475c285197fdc8179468de66ca60ee115a58fbac99296"
+checksum = "4f57d390e10fc236919088e9d973774bf006dcab137b443d1341a39317ebee4a"
 dependencies = [
  "ahash",
  "log",
- "lz4",
+ "lz4_flex",
  "profiling",
  "rbx_dom_weak",
  "rbx_reflection",
@@ -1470,9 +1461,9 @@ dependencies = [
 
 [[package]]
 name = "rbx_dom_weak"
-version = "3.0.0"
+version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04425cf6e9376e5486f4fb35906c120d1b1b45618a490318cf563fab1fa230a9"
+checksum = "63614f84aae649ff71ef6e693d4fc9e2184c6ef55852d48a29685ebd0470114f"
 dependencies = [
  "ahash",
  "rbx_types",
@@ -1482,9 +1473,9 @@ dependencies = [
 
 [[package]]
 name = "rbx_reflection"
-version = "5.0.0"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b6d0d62baa613556b058a5f94a53b01cf0ccde0ea327ce03056e335b982e77e"
+checksum = "1f53e5c4cf136060f7c514bd4d6f02436a57e36754c544965a7840123bc662d7"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1493,11 +1484,12 @@ dependencies = [
 
 [[package]]
 name = "rbx_reflection_database"
-version = "1.0.3+roblox-670"
+version = "3.0.1+roblox-741"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22c05ef92528c0fb0cc580592a65ca178d3ea9beb07a1d9ca0a2503c4f3721c"
+checksum = "74d54d92786425d3fd3e4ba8f006b17d83f5e93dad6eb4fccf6f1d9d86222a7b"
 dependencies = [
- "lazy_static",
+ "dirs",
+ "log",
  "rbx_reflection",
  "rmp-serde",
  "serde",
@@ -1505,9 +1497,9 @@ dependencies = [
 
 [[package]]
 name = "rbx_types"
-version = "2.0.0"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78e4fdde46493def107e5f923d82e813dec9b3eef52c2f75fbad3a716023eda2"
+checksum = "de3b89eefdd71f5e2a25543b1ead9f6ea2ed3fdfba8b397cbdb0de053eb2463e"
 dependencies = [
  "base64 0.13.1",
  "bitflags 1.3.2",
@@ -1516,6 +1508,21 @@ dependencies = [
  "rand 0.8.7",
  "serde",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "rbx_xml"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df4dba3154bef50fe1ba41cf06a066b9cd33bcfbf1c103e8db0818d8b4528b31"
+dependencies = [
+ "ahash",
+ "base64 0.13.1",
+ "log",
+ "rbx_dom_weak",
+ "rbx_reflection",
+ "rbx_reflection_database",
+ "xml-rs",
 ]
 
 [[package]]
@@ -1670,7 +1677,7 @@ dependencies = [
 [[package]]
 name = "roboat"
 version = "0.39.0"
-source = "git+https://github.com/shibahex/roboat-extras.git?branch=upload-animation-fix#fd7277313ed3161ca4ca5a3553ab5ba52f8ac38a"
+source = "git+https://github.com/shibahex/roboat-extras.git?branch=upload-animation-fix#dfa3647197c784298b56ef358a59809e52ee6f12"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2054,7 +2061,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -2355,6 +2362,12 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "twox-hash"
+version = "2.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
 
 [[package]]
 name = "unicase"
@@ -2712,6 +2725,21 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "xml"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f45bb2c13fec6a6cb4c0f76a7e94839e110a14ec803ec2940777a94c347bc52"
+
+[[package]]
+name = "xml-rs"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3a56132a0d6ecbe77352edc10232f788fc4ceefefff4cab784a98e0e16b6b51"
+dependencies = [
+ "xml",
+]
 
 [[package]]
 name = "yoke"
