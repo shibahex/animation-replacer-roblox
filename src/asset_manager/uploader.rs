@@ -235,7 +235,18 @@ impl AssetUploader {
                 continue;
             }
 
-            if let Some(asset_id) = operation.response.and_then(|resp| resp.asset_id) {
+            if let Some(response) = operation.response
+                && let Some(asset_id) = response.asset_id
+            {
+                // Roblox doesn't reject names it doesn't allow, it replaces them with #
+                if let Some(name) = response.display_name
+                    && name.contains('#')
+                {
+                    warn!(
+                        "Roblox filtered the name of {:?} {} to {:?}, the asset still works",
+                        asset_type, asset_id, name
+                    );
+                }
                 break asset_id;
             }
 
