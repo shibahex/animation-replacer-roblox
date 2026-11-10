@@ -12,6 +12,7 @@ tokio = { version = "1.45.1", features = ["full"] }
 url = "2.5.4"
 rbx_dom_weak = "4.2.0"
 rbx_binary = "3.0.1"
+rbx_xml = "3.0.1"
 ustr = "1.1.0"
 rbx_types = "3.1.0"
 regex = "1.11.1"

@@ -38,6 +38,7 @@ This is required to authenticate your account for uploading animations.
 To create a `API Key` go to https://create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab and create an `API Key` with permissions for `assets` and add both read and write.
 
 You will also need to open Roblox Studio and save the game as a file for the Animation Replacer.
+Binary (`.rbxl`, `.rbxm`) and xml (`.rbxlx`, `.rbxmx`) files both work, so Rojo projects can be used too. The output is saved as xml if its name ends in `.rbxlx` or `.rbxmx`.
 > [!NOTE]
 > Recommended to use the ``--output`` flag to avoid data loss if the game corrupts. 
 

@@ -1,6 +1,7 @@
 use super::tasks::{UploadContext, asset_location, collect_upload_results};
 use super::uploader::is_reuploadable;
 use crate::StudioParser;
+use crate::studio::file_format::{read_dom, write_dom};
 use bytes::Bytes;
 use roboat::assetdelivery::AssetBatchResponse;
 use roboat::catalog::AssetType;
@@ -94,7 +95,7 @@ impl UploadContext {
 
     /// Reuploads the assets inside a model and returns the model with their ids replaced.
     ///
-    /// If the model can't be read (for example an xml model), the original model is returned
+    /// If the model can't be read, the original model is returned
     /// and only the model itself gets reuploaded.
     async fn reupload_assets_in_model(
         &self,
@@ -104,15 +105,7 @@ impl UploadContext {
         visited: &mut HashSet<String>,
         depth: usize,
     ) -> Bytes {
-        if !model_data.starts_with(b"<roblox!") {
-            warn!(
-                "Model {} isn't a binary model, the assets inside it won't be reuploaded",
-                model_id
-            );
-            return model_data;
-        }
-
-        let dom = match rbx_binary::from_reader(&model_data[..]) {
+        let dom = match read_dom(&model_data) {
             Ok(dom) => dom,
             Err(e) => {
                 warn!(
@@ -195,9 +188,9 @@ impl UploadContext {
         parser.update_script_assets(asset_mapping);
         parser.update_game_assets(asset_mapping);
 
-        let root_children = parser.dom.root().children().to_vec();
+        // Always uploaded as binary, even if the original model was xml
         let mut new_model_data = Vec::new();
-        match rbx_binary::to_writer(&mut new_model_data, &parser.dom, &root_children) {
+        match write_dom(&mut new_model_data, &parser.dom, false) {
             Ok(()) => Bytes::from(new_model_data),
             Err(e) => {
                 warn!(

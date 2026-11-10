@@ -1,6 +1,6 @@
+use super::file_format::{is_xml_path, write_dom};
 use super::workplace_parser::{asset_id_from_content, asset_id_from_string, content_url};
 use crate::StudioParser;
-use rbx_binary::to_writer;
 use rbx_types::{Content, Variant};
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -32,7 +32,8 @@ impl StudioParser {
         }
     }
 
-    /// Saves the DOM to a .rbxl file.
+    /// Saves the DOM to a place file. Paths ending in `.rbxlx` or `.rbxmx` are saved as xml,
+    /// anything else as binary.
     ///
     /// The file is written next to the target first and then moved over it, so a failed
     /// save never leaves a half written (corrupted) place file behind.
@@ -57,12 +58,11 @@ impl StudioParser {
         temp_name.push(".tmp");
         let temp_path = PathBuf::from(temp_name);
 
-        // Get the children of the root instead of the root
-        let root_children = self.dom.root().children();
+        let xml = is_xml_path(&expanded_path);
 
         let result = (|| -> anyhow::Result<()> {
             let mut writer = BufWriter::new(File::create(&temp_path)?);
-            to_writer(&mut writer, &self.dom, root_children)?;
+            write_dom(&mut writer, &self.dom, xml)?;
             writer.flush()?;
             writer.get_ref().sync_all()?;
             fs::rename(&temp_path, &expanded_path)?;

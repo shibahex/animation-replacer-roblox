@@ -1,11 +1,9 @@
+use super::file_format::read_dom;
 use crate::StudioParser;
-use rbx_binary::from_reader;
 use rbx_types::{ContentType, Variant};
 use regex::Regex;
 use roboat::assetdelivery::AssetBatchResponse;
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -173,12 +171,11 @@ impl StudioParserBuilder {
         let expanded_path = shellexpand::full(&file_path)
             .map_err(|e| anyhow::anyhow!("Failed to expand path '{}': {}", file_path, e))?;
 
-        let file = File::open(expanded_path.as_ref())
-            .map(BufReader::new)
+        let data = std::fs::read(expanded_path.as_ref())
             .map_err(|e| anyhow::anyhow!("Failed to open file '{}': {}", expanded_path, e))?;
 
-        let dom =
-            from_reader(file).map_err(|e| anyhow::anyhow!("Failed to parse .rbxl DOM: {}", e))?;
+        let dom = read_dom(&data)
+            .map_err(|e| anyhow::anyhow!("Failed to parse '{}': {}", expanded_path, e))?;
 
         Ok(StudioParser {
             roblosecurity: self.roblosecurity,
